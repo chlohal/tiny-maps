@@ -1,0 +1,16 @@
+type bytes_lengthpacked;
+type bytes_varlength;
+type string_varlength_ascii;
+type string_asciiprintable;
+type string_byteprintable;
+type number_12;
+type number_32;
+type number_64;
+type number_tinypacked;
+type tinypacked_or_other;
+type time;
+type date;
+type hours;
+type address;
+type address_inherited;
+type list;
