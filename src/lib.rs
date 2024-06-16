@@ -1,3 +1,4 @@
 
 mod writer;
-mod tree;
+pub mod tree;
+pub mod postgres_objects;
