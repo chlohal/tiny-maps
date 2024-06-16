@@ -1,5 +1,6 @@
 use std::{env::args_os, fs::File};
 
+use offline_tiny_maps::postgres_objects::{NODE_OBJ, RELATION_OBJ, WAY_OBJ};
 use osmpbfreader::{
     OsmId,
     OsmObj::{Node, Relation, Way},
@@ -7,10 +8,6 @@ use osmpbfreader::{
 };
 
 use postgres::{Client, NoTls, Statement, Transaction};
-
-const RELATION_OBJ: i16 = 0;
-const WAY_OBJ: i16 = 1;
-const NODE_OBJ: i16 = 2;
 
 const COMMIT_EVERY: usize = 100_000;
 
@@ -22,7 +19,9 @@ fn main() -> Result<(), postgres::Error> {
 
     let mut reader = osmpbfreader::OsmPbfReader::new(file);
 
-    let mut conn = Client::connect("host=localhost user=postgres", NoTls)?;
+    let querystring = "host=localhost user=postgres";
+
+    let mut client = Client::connect(&querystring, NoTls)?;
 
     let mut objects_since_last_commit = 0;
 
@@ -70,15 +69,15 @@ fn main() -> Result<(), postgres::Error> {
                 )?;
             }
             Way(way) => {
-                for node in way.nodes.iter() {
+                for (i, node) in way.nodes.iter().enumerate() {
                     conn.execute(
                         &add_parent_relation_stmt,
-                        &[&node.0, &NODE_OBJ, &obj_id, &type_id, &None::<&str>],
+                        &[&node.0, &NODE_OBJ, &obj_id, &type_id, &(i as i32), &None::<&str>],
                     )?;
                 }
             }
             Relation(rel) => {
-                for Ref { role, member } in rel.refs.iter() {
+                for (i, Ref { role, member }) in rel.refs.iter().enumerate() {
                     conn.execute(
                         &add_parent_relation_stmt,
                         &[
@@ -86,6 +85,7 @@ fn main() -> Result<(), postgres::Error> {
                             &osm_type_id(member),
                             &obj_id,
                             &type_id,
+                            &(i as i32),
                             &Some(role.as_str()),
                         ],
                     )?;
@@ -108,7 +108,7 @@ fn reinit_transaction(
         .prepare("INSERT INTO tags (object, object_type, key, value) VALUES ($1, $2, $3, $4);")?;
     let add_object_stmt = conn.prepare("INSERT INTO objects (id, type) VALUES ($1, $2);")?;
 
-    let add_parent_relation_stmt = conn.prepare("INSERT INTO parent_relations (child_id, child_type, parent_id, parent_type, role) VALUES ($1, $2, $3, $4, $5);")?;
+    let add_parent_relation_stmt = conn.prepare("INSERT INTO parent_relations (child_id, child_type, parent_id, parent_type, list_index, role) VALUES ($1, $2, $3, $4, $5, $6);")?;
 
     let add_longlat_stmt = conn.prepare(
         "INSERT INTO node_longlats (node_id, decimicro_long, decimicro_lat) VALUES ($1, $2, $3);",
