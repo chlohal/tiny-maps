@@ -6,7 +6,7 @@ use postgres::{
     Error, GenericClient,
 };
 
-use crate::tree::{BoundingBox, GeometricBounds};
+use crate::tree::bbox::BoundingBox;
 
 pub const RELATION_OBJ: i16 = 0;
 pub const WAY_OBJ: i16 = 1;
@@ -16,13 +16,7 @@ pub struct OsmObject {
     id: i64,
     osm_type: i16,
     lazy_tags: Option<BTreeMap<String, String>>,
-    bbox: Option<BoundingBox<i64>>,
-}
-
-impl GeometricBounds for (BoundingBox<i64>, OsmObject) {
-    fn bounding_box(&self) -> BoundingBox<i64> {
-        self.0
-    }
+    bbox: Option<BoundingBox<i32>>,
 }
 
 pub fn osm_objects<'a>(
@@ -74,7 +68,7 @@ impl OsmObject {
     pub fn load_bbox<'a>(
         &'a mut self,
         conn: &mut impl GenericClient,
-    ) -> Result<BoundingBox<i64>, Error> {
+    ) -> Result<BoundingBox<i32>, Error> {
         if let Some(bbox) = self.bbox {
             return Ok(bbox);
         }
@@ -82,10 +76,10 @@ impl OsmObject {
         if self.osm_type == NODE_OBJ {
             let row = conn.query_one("SELECT decimicro_long, decimicro_lat FROM node_longlats WHERE node_id = $1", &[&self.id])?;
 
-            return Ok(BoundingBox::from_point(row.get::<_, i32>(0) as i64, row.get::<_, i32>(1) as i64));
+            return Ok(BoundingBox::from_point(row.get::<_, i32>(0), row.get::<_, i32>(1)));
         }
 
-        let bbox: BoundingBox<i64> = conn
+        let bbox: BoundingBox<i32> = conn
             .query_raw::<_, &dyn ToSql, _>(
                 "WITH RECURSIVE children(id, type, x, y) AS (
 

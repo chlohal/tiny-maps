@@ -22,6 +22,35 @@ macro_rules! enum_impl
 
 pub(crate) use enum_impl;
 
+macro_rules! make_tag_mapper {
+    (
+        enum $enum_typename:ident($repr:ident) ;
+        $($key:ident = $val:ident)*
+    ) => {
+        #[repr($repr)]
+        #[allow(non_camel_case_types)]
+        enum $enum_typename {
+            $($val),*
+        }
+
+        impl TryFrom<&str> for BuildingType {
+            type Error = ();
+            fn try_from(value: &str) -> Result<BuildingType, ()>{
+                use $enum_typename::*;
+                let value = value.as_ref();
+                $(
+                    if value == stringify!($val)  {
+                        return Ok($val);
+                    }
+                )*
+                Err(())
+            }
+        }
+    };
+}
+
+pub(crate) use make_tag_mapper;
+
 macro_rules! str_impl
 {
     {

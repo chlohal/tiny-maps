@@ -1,163 +1,38 @@
-use std::{collections::VecDeque, ops::Index};
+use std::{
+    collections::{btree_set, BTreeSet},
+    mem,
+};
 
-use postgres::fallible_iterator::{FallibleIterator, FromFallibleIterator};
+use bbox::{BoundingBox, LongLatSplitDirection};
+use compare_by::CompareBy;
 
-const NODE_SATURATION_POINT: usize = 10000;
+pub mod bbox;
+pub mod compare_by;
 
-pub struct LongLatTree<T: GeometricBounds> {
-    bbox: BoundingBox<i64>,
+const NODE_SATURATION_POINT: usize = 2000;
+
+pub struct LongLatTree<T: UpdateOnBasisLongLatMove> {
+    bbox: BoundingBox<i32>,
     direction: LongLatSplitDirection,
-    children: Vec<T>,
+    children: BTreeSet<CompareBy<(BoundingBox<i32>, T)>>,
     left_right_split: Option<(Box<LongLatTree<T>>, Box<LongLatTree<T>>)>,
     id: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BoundingBox<T> {
-    x: T,
-    y: T,
-    width: T,
-    height: T,
-}
-
-impl FromFallibleIterator<(i64, i64)> for BoundingBox<i64> {
-    fn from_fallible_iter<I>(it: I) -> Result<Self, I::Error>
-    where
-        I: postgres::fallible_iterator::IntoFallibleIterator<Item = (i64, i64)>,
-    {
-        let mut iter = it.into_fallible_iter();
-
-        let mut bbox = if let Some((x, y)) = iter.next()? {
-            BoundingBox::from_point(x, y)
-        } else {
-            return Ok(BoundingBox::empty());
-        };
-
-        iter.for_each(|(x, y)| {
-            bbox.extend_with_point(x.into(), y.into());
-            Ok(())
-        })?;
-
-        Ok(bbox)
-    }
-}
-
-impl FromIterator<(i64, i64)> for BoundingBox<i64> {
-    fn from_iter<I: IntoIterator<Item = (i64, i64)>>(iter: I) -> Self {
-        let mut iter = iter.into_iter();
-
-        let mut bbox = if let Some((x, y)) = iter.next() {
-            BoundingBox::from_point(x, y)
-        } else {
-            return BoundingBox::empty();
-        };
-
-        for (x, y) in iter {
-            bbox.extend_with_point(x.into(), y.into());
-        }
-
-        bbox
-    }
-}
-
-impl BoundingBox<i64> {
-    fn center(&self) -> (i64, i64) {
-        return (self.x + self.width / 2, self.y + self.height / 2);
-    }
-    fn split_on_axis(&self, direction: &LongLatSplitDirection) -> (Self, Self) {
-        match direction {
-            LongLatSplitDirection::Long => (
-                BoundingBox {
-                    x: self.x,
-                    y: self.y,
-                    width: self.width,
-                    height: self.height / 2,
-                },
-                BoundingBox {
-                    x: self.x,
-                    y: self.y + self.height / 2,
-                    width: self.width,
-                    height: self.height / 2,
-                },
-            ),
-            LongLatSplitDirection::Lat => (
-                BoundingBox {
-                    x: self.x,
-                    y: self.y,
-                    width: self.width / 2,
-                    height: self.height,
-                },
-                BoundingBox {
-                    x: self.x + self.width / 2,
-                    y: self.y,
-                    width: self.width / 2,
-                    height: self.height,
-                },
-            ),
-        }
-    }
-
-    fn contains(&self, other: &BoundingBox<i64>) -> bool {
-        return self.y <= other.y
-            && self.x <= other.y
-            && self.y + self.height >= other.y + other.height
-            && self.x + self.width >= other.x + other.width;
-    }
-
-    pub fn empty() -> BoundingBox<i64> {
-        BoundingBox {
-            x: i64::MIN,
-            y: i64::MIN,
-            width: 0,
-            height: 0,
-        }
-    }
-
-    pub fn from_point(x: i64, y: i64) -> BoundingBox<i64> {
-        BoundingBox {
-            x,
-            y,
-            width: 0,
-            height: 0,
-        }
-    }
-
-    fn extend_with_point(&mut self, x: i64, y: i64) {
-        if self.x > x {
-            self.x = x;
-        }
-        if self.y > y {
-            self.y = y;
-        }
-
-        if self.x + self.width < x {
-            self.width = self.x.abs_diff(x) as i64;
-        }
-
-        if self.y + self.height < y {
-            self.height = self.y.abs_diff(y) as i64;
-        }
-    }
-}
-
-pub trait GeometricBounds {
-    fn bounding_box(&self) -> BoundingBox<i64>;
-}
-
-pub struct LongLatTreeItems<'a, T: GeometricBounds> {
-    query_bbox: &'a BoundingBox<i64>,
+pub struct LongLatTreeItems<'a, T: UpdateOnBasisLongLatMove> {
+    query_bbox: &'a BoundingBox<i32>,
     parent_tree_stack: Vec<&'a LongLatTree<T>>,
-    current_tree_children: std::slice::Iter<'a, T>,
+    current_tree_children: btree_set::Iter<'a, CompareBy<(BoundingBox<i32>, T)>>,
 }
 
-impl<'a, T: GeometricBounds> Iterator for LongLatTreeItems<'a, T> {
+impl<'a, T> Iterator for LongLatTreeItems<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(next) = self.current_tree_children.next() {
-                if self.query_bbox.contains(&next.bounding_box()) {
-                    return Some(next);
+                if self.query_bbox.contains(&next.0 .0) {
+                    return Some(&next.0 .1);
                 }
             } else {
                 let tree = self.parent_tree_stack.pop()?;
@@ -171,24 +46,19 @@ impl<'a, T: GeometricBounds> Iterator for LongLatTreeItems<'a, T> {
     }
 }
 
-impl<T: GeometricBounds> LongLatTree<T> {
-    pub fn new() -> Self {
+impl<T> LongLatTree<T> {
+    pub fn new(bbox: BoundingBox<i32>) -> Self {
         LongLatTree {
-            bbox: BoundingBox {
-                x: i64::MIN / 2,
-                y: i64::MIN / 2,
-                width: i64::MAX,
-                height: i64::MAX,
-            },
+            bbox,
             direction: LongLatSplitDirection::Lat,
-            children: Vec::new(),
+            children: BTreeSet::new(),
             left_right_split: None,
             id: 1,
         }
     }
     pub fn find_items_in_box<'a>(
         &'a self,
-        query_bbox: &'a BoundingBox<i64>,
+        query_bbox: &'a BoundingBox<i32>,
     ) -> LongLatTreeItems<'a, T> {
         match &self.left_right_split {
             Some((l, r)) => {
@@ -200,42 +70,67 @@ impl<T: GeometricBounds> LongLatTree<T> {
                     return LongLatTreeItems {
                         query_bbox,
                         parent_tree_stack: vec![l, r],
-                        current_tree_children: [].iter(),
+                        current_tree_children: self.children.iter(),
                     };
                 }
             }
             None => {
                 return LongLatTreeItems {
                     query_bbox,
-                    parent_tree_stack: vec![self],
-                    current_tree_children: [].iter(),
+                    parent_tree_stack: Vec::with_capacity(0),
+                    current_tree_children: self.children.iter(),
                 }
             }
         }
     }
-    pub fn insert(&mut self, item: T) {
-        let bbox = item.bounding_box();
 
-        self.insert_as_bbox(item, bbox);
-    }
-
-    pub fn insert_as_bbox(&mut self, item: T, bbox: BoundingBox<i64>) {
+    pub fn insert_created(
+        &mut self,
+        bbox: BoundingBox<i32>,
+        creator: impl FnOnce(BoundingBox<i32>) -> T,
+    ) {
         match &mut self.left_right_split {
             Some((left, right)) => {
                 if left.bbox.contains(&bbox) {
-                    return left.insert_as_bbox(item, bbox);
+                    return left.insert_created(bbox, creator);
                 } else if left.bbox.contains(&bbox) {
-                    return right.insert_as_bbox(item, bbox);
+                    return right.insert_created(bbox, creator);
                 } else {
-                    self.children.push(item);
+                    self.children
+                        .insert(tree_child_of(bbox, creator(self.bbox), self.direction));
                 }
             }
             None => {
                 if self.children.len() < NODE_SATURATION_POINT {
-                    self.children.push(item);
+                    self.children
+                        .insert(tree_child_of(bbox, creator(self.bbox), self.direction));
                 } else {
                     self.split_left_right();
-                    return self.insert_as_bbox(item, bbox);
+                    return self.insert(bbox, creator(self.bbox));
+                }
+            }
+        }
+    }
+
+    pub fn insert(&mut self, bbox: BoundingBox<i32>, item: T) {
+        match &mut self.left_right_split {
+            Some((left, right)) => {
+                if left.bbox.contains(&bbox) {
+                    return left.insert(bbox, item);
+                } else if left.bbox.contains(&bbox) {
+                    return right.insert(bbox, item);
+                } else {
+                    self.children
+                        .insert(tree_child_of(bbox, item, self.direction));
+                }
+            }
+            None => {
+                if self.children.len() < NODE_SATURATION_POINT {
+                    self.children
+                        .insert(tree_child_of(bbox, item, self.direction));
+                } else {
+                    self.split_left_right();
+                    return self.insert(bbox, item);
                 }
             }
         }
@@ -246,17 +141,23 @@ impl<T: GeometricBounds> LongLatTree<T> {
 
         let (left_bb, right_bb) = self.bbox.split_on_axis(&self.direction);
 
-        let mut left_children = Vec::with_capacity(NODE_SATURATION_POINT / 2);
-        let mut right_children = Vec::with_capacity(NODE_SATURATION_POINT / 2);
-        let mut both_children = Vec::new();
+        let new_direction = !self.direction;
 
-        for child in self.children.drain(..).into_iter() {
-            if left_bb.contains(&child.bounding_box()) {
-                left_children.push(child);
-            } else if right_bb.contains(&child.bounding_box()) {
-                right_children.push(child);
+        let mut left_children = BTreeSet::new();
+        let mut both_children = BTreeSet::new();
+
+        let right_children = self
+            .children
+            .split_off(
+                //safety: we only compare by the bounding box; the item is completely irrelevant.
+                &unsafe { tree_child_of(right_bb, mem::zeroed(), self.direction) }
+            );
+
+        while let Some(CompareBy((bbox, item), func)) = self.children.pop_first() {
+            if left_bb.contains(&bbox) {
+                left_children.insert(tree_child_of(bbox, item, new_direction));
             } else {
-                both_children.push(child);
+                both_children.insert(CompareBy((bbox, item), func));
             }
         }
 
@@ -269,32 +170,38 @@ impl<T: GeometricBounds> LongLatTree<T> {
                 direction: !self.direction,
                 children: left_children,
                 left_right_split: None,
-                id: self.id << 1 | 0,
+                id: (self.id << 1) | 0,
             }),
             Box::new(LongLatTree {
                 bbox: right_bb,
                 direction: !self.direction,
                 children: right_children,
                 left_right_split: None,
-                id: self.id << 1 | 1,
+                id: (self.id << 1) | 1,
             }),
         ))
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum LongLatSplitDirection {
-    Long,
-    Lat,
+trait UpdateOnBasisLongLatMove {
+    fn update(&mut self, old_basis: BoundingBox<i32>, new_basis: BoundingBox<i32>);
 }
 
-impl std::ops::Not for LongLatSplitDirection {
-    type Output = Self;
+impl<T> UpdateOnBasisLongLatMove for T {
+    fn update(&mut self, old_basis: BoundingBox<i32>, new_basis: BoundingBox<i32>) {}
+}
 
-    fn not(self) -> Self::Output {
-        match self {
-            LongLatSplitDirection::Long => LongLatSplitDirection::Lat,
-            LongLatSplitDirection::Lat => LongLatSplitDirection::Long,
+fn tree_child_of<T>(
+    bbox: BoundingBox<i32>,
+    item: T,
+    direction: LongLatSplitDirection,
+) -> CompareBy<(BoundingBox<i32>, T)> {
+    match direction {
+        LongLatSplitDirection::Long => {
+            CompareBy::with_cmp((bbox, item), |(a, _), (b, _)| a.x().cmp(&b.x()))
+        }
+        LongLatSplitDirection::Lat => {
+            CompareBy::with_cmp((bbox, item), |(a, _), (b, _)| a.y().cmp(&b.y()))
         }
     }
 }
