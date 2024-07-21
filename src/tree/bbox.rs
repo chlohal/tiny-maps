@@ -1,8 +1,9 @@
 use std::ops::{Add, Div};
 
 use postgres::fallible_iterator::{FallibleIterator, FromFallibleIterator};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct BoundingBox<T> {
     x: T,
     y: T,
@@ -152,10 +153,16 @@ impl BoundingBox<i32> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum LongLatSplitDirection {
     Long,
     Lat,
+}
+
+impl Default for LongLatSplitDirection {
+    fn default() -> Self {
+        LongLatSplitDirection::Lat
+    }
 }
 
 impl std::ops::Not for LongLatSplitDirection {

@@ -6,6 +6,12 @@ pub struct TopNHeap<T: PartialEq + Ord + Clone, K> {
     max_length: usize,
 }
 
+impl<T: PartialEq + Ord + Clone, K> Default for TopNHeap<T, K> {
+    fn default() -> Self {
+        Self::new(300)
+    }
+}
+
 
 impl<T: PartialEq + Ord + Clone, K> TopNHeap<T, K> {
 

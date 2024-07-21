@@ -1,31 +1,32 @@
 use std::{cmp::Ordering, ops::Deref};
 
+use serde::{Deserialize, Serialize};
+
+use super::bbox::{BoundingBox, LongLatSplitDirection};
 
 
-pub struct CompareBy<T> (pub T, pub fn(&T, &T) -> Ordering);
+#[derive(Deserialize, Serialize)]
+pub struct BoundingBoxOrderedByXOrY<T: Ord, I> (pub BoundingBox<T>, pub LongLatSplitDirection, pub I);
 
-impl<T> CompareBy<T> {
-    pub fn with_cmp(item: T, arg: fn(&T, &T) -> Ordering) -> Self {
-        Self(item, arg)
-    }
-}
-
-impl<T> PartialEq for CompareBy<T> {
+impl<T: Ord, I> PartialEq for BoundingBoxOrderedByXOrY<T, I> {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(&other).is_eq()
     }
 }
-impl<T> Eq for CompareBy<T> {}
+impl<T: Ord, I> Eq for BoundingBoxOrderedByXOrY<T, I> {}
 
 
-impl<T> PartialOrd for CompareBy<T> {
+impl<T: Ord, I> PartialOrd for BoundingBoxOrderedByXOrY<T, I> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T> Ord for CompareBy<T> {
+impl<T: Ord, I> Ord for BoundingBoxOrderedByXOrY<T, I> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.1(&self.0, &other.0)
+        match self.1 {
+            LongLatSplitDirection::Long => self.0.x().cmp(other.0.x()),
+            LongLatSplitDirection::Lat => self.0.x().cmp(other.0.x()),
+        }
     }
 }
