@@ -1,14 +1,17 @@
-use crate::compressor::literals::{Literal, OsmLiteralSerializable};
+use crate::{compressor::literals::{literal_value::LiteralValue, Literal, LiteralPool}, storage::serialize_min::SerializeMinimal};
 
 pub struct OsmPublicTransit;
 
-impl OsmLiteralSerializable for OsmPublicTransit {
-    type Category = Literal;
+impl SerializeMinimal for OsmPublicTransit {
+    type ExternalData<'a> = &'a mut (LiteralPool<Literal>, LiteralPool<LiteralValue>);
 
-    fn serialize_to_pool(
-        &self,
-        pool: &mut <Self::Category as crate::compressor::literals::OsmLiteralArchetype>::SerializationReference,
-    ) -> Vec<u8> {
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
+        todo!()
+    }
+}
+
+impl From<OsmPublicTransit> for Literal {
+    fn from(value: OsmPublicTransit) -> Self {
         todo!()
     }
 }

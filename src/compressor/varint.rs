@@ -1,43 +1,51 @@
 use std::{
-    mem,
-    ops::{BitOrAssign, ShlAssign},
+    io::Write, io::Read, mem, ops::{BitOrAssign, ShlAssign}
 };
+
+use crate::storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 
 pub fn to_varint<T: ToVarint>(value: T) -> Vec<u8> {
     value.to_varint()
 }
 
-pub fn from_varint<T: Default + BitOrAssign<u8> + ShlAssign<u8>>(bytes: &[u8]) -> Option<T> {
-    let flag_done = 0b1_000_0000;
+pub fn from_varint<T: FromVarint>(bytes: &mut impl Read) -> std::io::Result<T> {
+    T::from_varint(bytes)
+}
 
-    let mask = 0b1111_111u8;
-    let shift = 7u8;
+pub trait ToVarint {
+    fn to_varint(&self) -> Vec<u8>;
+}
 
-    let mut value = T::default();
+pub trait FromVarint: Sized {
+    fn from_varint(bytes: &mut impl Read) -> std::io::Result<Self>;
+}
 
-    for byte in bytes {
-        //apply byte, without value of flag
-        value |= byte ^ flag_done;
+impl<T: ToVarint> SerializeMinimal for T {
+    type ExternalData<'s> = ();
 
-        if flag_done & byte != 0 {
-            return Some(value);
-        } else {
-            value <<= shift;
-        }
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
+        write_to.write_all(&self.to_varint())
     }
-
-    return None;
 }
 
-trait ToVarint {
-    fn to_varint(self) -> Vec<u8>;
+impl<T: FromVarint> DeserializeFromMinimal for T {
+    type ExternalData<'a> = ();
+
+    
+
+    fn deserialize_minimal<'a, 'd: 'a, R: Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+        Self::from_varint(from)   
+    }
 }
+
 
 macro_rules! impl_to_varint {
     ( $($typ:tt),* ) => {
         $(
         impl ToVarint for $typ {
-            fn to_varint(mut self) -> Vec<u8> {
+            fn to_varint(&self) -> Vec<u8> {
+                let mut value = *self;
+
                 let flag_done = 0b1_000_0000;
 
                 let mut slice = Vec::with_capacity(mem::size_of::<$typ>());
@@ -47,11 +55,11 @@ macro_rules! impl_to_varint {
 
                 loop {
                     let byte = self & mask;
-                    self >>= shift;
+                    value >>= shift;
 
                     slice.push(byte as u8);
 
-                    if self == 0 {
+                    if value == 0 {
                         break;
                     }
                 }
@@ -66,13 +74,39 @@ macro_rules! impl_to_varint {
                 slice
             }
         }
+        impl FromVarint for $typ {
+            fn from_varint(bytes: &mut impl Read) -> std::io::Result<Self> {
+                let flag_done = 0b1_000_0000;
+            
+                let mask = 0b1111_111u8;
+                let shift = 7u8;
+            
+                let mut value = 0;
+
+                let byte = 0b0u8;
+            
+                while let Ok(_) = bytes.read_exact(&mut [byte]) {
+                    //apply byte, without value of flag
+                    value |= (byte ^ flag_done) as $typ;
+            
+                    if (flag_done & byte) != 0 {
+                        return Ok(value);
+                    } else {
+                        value <<= shift;
+                    }
+                }
+            
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+        }
     )*
     };
 }
 
 trait Zigzag {
     type Unsigned;
-    fn zigzag(self) -> Self::Unsigned;
+    fn zigzag(&self) -> Self::Unsigned;
+    fn unzigzag(zigzag: Self::Unsigned) -> Self;
 }
 
 macro_rules! impl_to_be_bytes_signed_zigzag {
@@ -81,18 +115,22 @@ macro_rules! impl_to_be_bytes_signed_zigzag {
         impl Zigzag for $typ {
             type Unsigned = $utyp;
 
-            fn zigzag(self) -> Self::Unsigned {
-                let mut zigzag = self as $utyp;
-                let ibit = zigzag >> $utyp::BITS - 1;
-                zigzag <<= 1;
-                zigzag |= ibit;
+            fn zigzag(&self) -> Self::Unsigned {
+                (*self as $utyp).rotate_left(1)
+            }
+            fn unzigzag(zigzag: Self::Unsigned) -> Self {
 
-                zigzag
+                zigzag.rotate_right(1) as $typ
             }
         }
         impl ToVarint for $typ {
-            fn to_varint(self) -> Vec<u8> {
+            fn to_varint(&self) -> Vec<u8> {
                 Zigzag::zigzag(self).to_varint()
+            }
+        }
+        impl FromVarint for $typ {
+            fn from_varint(bytes: &mut impl Read) -> std::io::Result<Self> {
+                $utyp::from_varint(bytes).map(|x| Zigzag::unzigzag(x))
             }
         }
     )*
@@ -114,7 +152,7 @@ mod tests {
 
     #[test]
     fn decode() {
-        let result: u8 = from_varint(&vec![0b1_000_0000]).unwrap();
+        let result: u8 = from_varint(&mut vec![0b1_000_0000].as_slice()).unwrap();
         assert_eq!(result, 0);
     }
 }

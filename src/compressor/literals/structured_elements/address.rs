@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use osmpbfreader::Tags;
 
-use crate::compressor::{literals::string_prefix_view::StrAsciiPrefixView, varint::to_varint};
+use crate::{compressor::{literals::{string_prefix_view::StrAsciiPrefixView, LiteralKey, WellKnownKeyVar}, varint::to_varint}, storage::serialize_min::SerializeMinimal};
 
-use super::super::{
-    literal_value::LiteralValue, packed_strings::PackedString, Literal, LiteralPool, OsmLiteralSerializable,
-};
+use super::{super::{
+    literal_value::LiteralValue, Literal, LiteralPool,
+}, insert_with_byte};
 
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 20;
 
@@ -16,12 +16,25 @@ pub struct OsmAddress {
     city: Option<LiteralValue>,
     state: Option<LiteralValue>,
 
-    prefix: Option<PackedString>,
+    prefix: Option<LiteralValue>,
     province: Option<LiteralValue>,
     extra: Option<OsmAddressExtra>,
 }
 
+impl From<OsmAddress> for Literal {
+    fn from(value: OsmAddress) -> Self {
+        Literal::WellKnownKeyVar(WellKnownKeyVar::Address(value))
+    }
+}
+
 impl OsmAddress {
+    pub fn as_option(self) -> Option<Self> {
+        if self.is_none() {
+            None
+        } else {
+            Some(self)
+        }
+    }
     pub fn is_none(&self) -> bool {
         self.state.is_none()
             && self.number.is_none()
@@ -57,7 +70,9 @@ impl OsmAddress {
     pub fn make_from_tags(tags: &mut Tags, prefix: &str) -> Self {
         let mut pstr = prefix.to_string();
         pstr.push(':');
-        let mut tag_building = StrAsciiPrefixView::new(pstr, MAX_TAG_LENGTH_PLUS_TWO);
+
+        //multiply the max length by 4 to get the absolute worst-case scenario for byte length in utf8
+        let mut tag_building = StrAsciiPrefixView::new(pstr, MAX_TAG_LENGTH_PLUS_TWO * 4);
 
         let number = LiteralValue::from_tag_and_remove(tags, &tag_building.with("housenumber"));
         let street = LiteralValue::from_tag_and_remove(tags, &tag_building.with("street"));
@@ -76,7 +91,7 @@ impl OsmAddress {
         }
 
         let prefix = if prefix != "addr" {
-            Some(PackedString::from(prefix.to_string()))
+            Some(prefix.to_string().into())
         } else {
             None
         };
@@ -95,44 +110,10 @@ impl OsmAddress {
     }
 }
 
-macro_rules! insert_with_byte {
-    ($name:ident, $marker_byte:expr, $marker_byte_index:expr) => {
-        match &self.$name {
-            Some(t) => {
-                $marker_byte |= 1 << $marker_byte_index;
-                let id = pool.1.insert(t);
-                extra_storage.extend(to_varint(id));
-            }
-            None => {}
-        }
-    };
-}
+impl SerializeMinimal for OsmAddress {
+    type ExternalData<'a> = &'a mut (LiteralPool<Literal>, LiteralPool<LiteralValue>);
 
-#[inline]
-fn insert_with_byte(
-    value: &Option<LiteralValue>,
-    pool: &mut LiteralPool<LiteralValue>,
-    extra_storage: &mut Vec<u8>,
-    byte: &mut u8,
-    byte_index: u8,
-) {
-    match value {
-        Some(t) => {
-            *byte |= 1 << byte_index;
-            let id = pool.insert(t);
-            extra_storage.extend(to_varint(id));
-        }
-        None => {}
-    }
-}
-
-impl OsmLiteralSerializable for OsmAddress {
-    type Category = Literal;
-
-    fn serialize_to_pool(
-        &self,
-        pool: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
-    ) -> Vec<u8> {
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, pool: Self::ExternalData<'s>) -> std::io::Result<()> {
         let mut first_byte = 0b0000_0000u8;
 
         let mut extra_storage = Vec::<u8>::new();
@@ -149,11 +130,11 @@ impl OsmLiteralSerializable for OsmAddress {
                     first_byte |= 0b0100_0000;
                     first_byte |= (num - 1) as u8;
 
-                    let street_id = pool.1.insert(self.street.as_ref().unwrap());
+                    let street_id = pool.1.insert(self.street.as_ref().unwrap())?;
                     extra_storage.extend(to_varint(street_id));
 
                     extra_storage[0] = first_byte;
-                    return extra_storage;
+                    return write_to.write_all(&extra_storage);
                 }
                 _ => {}
             }
@@ -186,46 +167,43 @@ impl OsmLiteralSerializable for OsmAddress {
             &mut extra_storage,
             &mut first_byte,
             6,
-        );
+        )?;
         insert_with_byte(
             &self.street,
             &mut pool.1,
             &mut extra_storage,
             &mut first_byte,
             5,
-        );
+        )?;
         insert_with_byte(
             &self.city,
             &mut pool.1,
             &mut extra_storage,
             &mut first_byte,
             4,
-        );
+        )?;
         insert_with_byte(
             &self.state,
             &mut pool.1,
             &mut extra_storage,
             &mut first_byte,
             3,
-        );
+        )?;
         insert_with_byte(
             &self.province,
             &mut pool.1,
             &mut extra_storage,
             &mut first_byte,
             2,
-        );
+        )?;
 
-        //manually pop in the prefix bc it's a different type & idw to make it generic lol
-        //and it'll be good to keep that separate bc it's separate
-        match &self.prefix {
-            Some(t) => {
-                first_byte |= 1 << 1;
-                let id = pool.1.insert(t);
-                extra_storage.extend(to_varint(id));
-            }
-            None => {}
-        }
+        insert_with_byte(
+            &self.prefix,
+            &mut pool.1,
+            &mut extra_storage,
+            &mut first_byte,
+            1,
+        )?;
 
         //if we have extra?
         if let Some(extra) = &self.extra {
@@ -237,42 +215,42 @@ impl OsmLiteralSerializable for OsmAddress {
                 &mut extra_storage,
                 &mut second_byte,
                 7,
-            );
+            )?;
             insert_with_byte(
                 &extra.unit,
                 &mut pool.1,
                 &mut extra_storage,
                 &mut second_byte,
                 6,
-            );
+            )?;
             insert_with_byte(
                 &extra.floor,
                 &mut pool.1,
                 &mut extra_storage,
                 &mut second_byte,
                 5,
-            );
+            )?;
             insert_with_byte(
                 &extra.postbox,
                 &mut pool.1,
                 &mut extra_storage,
                 &mut second_byte,
                 4,
-            );
+            )?;
             insert_with_byte(
                 &extra.full,
                 &mut pool.1,
                 &mut extra_storage,
                 &mut second_byte,
                 3,
-            );
+            )?;
             insert_with_byte(
                 &extra.postcode,
                 &mut pool.1,
                 &mut extra_storage,
                 &mut second_byte,
                 2,
-            );
+            )?;
 
             if let Some(even_more_extra) = &extra.even_more_extra {
                 second_byte |= 1 << 1;
@@ -283,65 +261,66 @@ impl OsmLiteralSerializable for OsmAddress {
                     &mut extra_storage,
                     &mut third_byte,
                     7,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.suburb,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     6,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.subdistrict,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     5,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.county,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     4,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.door,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     3,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.flats,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     2,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.block,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     1,
-                );
+                )?;
                 insert_with_byte(
                     &even_more_extra.block_number,
                     &mut pool.1,
                     &mut extra_storage,
                     &mut third_byte,
                     0,
-                );
+                )?;
 
                 extra_storage[2] = third_byte;
             }
 
             if let Some(arbitrary) = &extra.arbitrary {
-                for (key, val) in arbitrary.iter() {
-                    extra_storage.extend(to_varint(pool.1.insert(key)));
+                for kv in arbitrary.iter() {
 
-                    extra_storage.extend(to_varint(pool.1.insert(val)));
+                    let id = LiteralPool::<Literal>::insert(pool, kv)?;
+
+                    extra_storage.extend(to_varint(id));
                 }
             }
 
@@ -350,7 +329,7 @@ impl OsmLiteralSerializable for OsmAddress {
 
         extra_storage[0] = first_byte;
 
-        extra_storage
+        return write_to.write_all(&extra_storage);
     }
 }
 
@@ -363,7 +342,8 @@ pub struct OsmAddressExtra {
     full: Option<LiteralValue>,
     postcode: Option<LiteralValue>,
     even_more_extra: Option<OsmAddressEvenMoreExtra>,
-    arbitrary: Option<BTreeMap<PackedString, LiteralValue>>,
+    //ONLY Literal::KeyVar
+    arbitrary: Option<Vec<Literal>>,
 }
 impl OsmAddressExtra {
     fn none() -> Self {
@@ -398,15 +378,15 @@ impl OsmAddressExtra {
         let full = LiteralValue::from_tag_and_remove(tags, &tag_building.with("full"));
         let postcode = LiteralValue::from_tag_and_remove(tags, &tag_building.with("postcode"));
 
-        let mut arbitrary = BTreeMap::new();
+        let mut arbitrary = Vec::new();
 
         let prefix = tag_building.with("");
         tags.retain(|k, v| {
             if k.starts_with(prefix) {
-                let k_packed = PackedString::from(&k[prefix.len()..]);
+                let k_packed = LiteralKey::from(&k[prefix.len()..]);
                 let v_packed = LiteralValue::from(v);
 
-                arbitrary.insert(k_packed, v_packed);
+                arbitrary.push(Literal::KeyVar(k_packed, v_packed));
 
                 return true;
             }

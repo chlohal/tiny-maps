@@ -2,11 +2,11 @@ use std::{cmp::Ordering, ops::Deref};
 
 use serde::{Deserialize, Serialize};
 
-use super::bbox::{BoundingBox, LongLatSplitDirection};
+use super::bbox::{BoundingBox, DeltaBoundingBox, LongLatSplitDirection};
 
 
 #[derive(Deserialize, Serialize)]
-pub struct BoundingBoxOrderedByXOrY<T: Ord, I> (pub BoundingBox<T>, pub LongLatSplitDirection, pub I);
+pub struct BoundingBoxOrderedByXOrY<T: Ord, I> (pub DeltaBoundingBox<T>, pub LongLatSplitDirection, pub I);
 
 impl<T: Ord, I> PartialEq for BoundingBoxOrderedByXOrY<T, I> {
     fn eq(&self, other: &Self) -> bool {

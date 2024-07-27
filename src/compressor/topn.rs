@@ -1,68 +1,45 @@
-use std::{cmp, collections::{BTreeMap, BTreeSet}, ops::{Bound::*, RangeBounds, RangeFrom}};
-pub struct TopNHeap<T: PartialEq + Ord + Clone, K> {
-    priorities: BTreeMap<usize, BTreeSet<T>>,
-    values: BTreeMap<T, (usize, K)>,
-    zero_point: usize,
-    max_length: usize,
+use std::{cmp, collections::{BTreeMap, BTreeSet, VecDeque}, fmt::Debug, ops::{Bound::*, RangeBounds, RangeFrom}};
+pub struct TopNHeap<const SIZE: usize, T: PartialEq + Ord + Clone, K> {
+    priorities: VecDeque<(T, K)>,
 }
 
-impl<T: PartialEq + Ord + Clone, K> Default for TopNHeap<T, K> {
+impl<const SIZE: usize, T: PartialEq + Ord + Clone, K: Debug> Default for TopNHeap<SIZE, T, K> {
     fn default() -> Self {
-        Self::new(300)
+        Self::new()
     }
 }
 
 
-impl<T: PartialEq + Ord + Clone, K> TopNHeap<T, K> {
+impl<const SIZE: usize, T: PartialEq + Ord + Clone, K: Debug> TopNHeap<SIZE, T, K> {
 
 
-    pub fn new(max_length: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            values: BTreeMap::new(),
-            priorities: BTreeMap::new(),
-            zero_point: 0,
-            max_length,
+            priorities: VecDeque::with_capacity(SIZE),
         }
     }
     pub fn get(&self, item: &T) -> Option<&K> {
 
-        self.values.get(item).map(|x|&x.1)
+        self.priorities.iter().find(|x| x.0 == *item).map(|x| &x.1)
     }
     pub fn insert_and_increase(&mut self, item: T, key: K) {
         let TopNHeap {
-            values,
             priorities,
-            zero_point,
-            max_length,
         } = self;
 
-        //evict any zeros
-        let subzeros = priorities.range(0..*zero_point);
-        for (_priority, value) in subzeros {
-            for item in value {
-                values.remove(item);
+        let idx = (priorities).iter().enumerate().find(|x| x.1.0 == item).map(|x| x.0);
+
+        //if it's already in the deque, then move it to the front
+        if let Some(i) = idx {
+            let itm = priorities.remove(i).unwrap();
+
+            priorities.push_front(itm);
+        } else {
+            //remove the last item and place this one in the front!
+            if priorities.len() >= SIZE {
+                priorities.pop_back();
             }
-        }
-        *priorities = priorities.split_off(&zero_point);
-
-        //early return if we're full, even after removing the zeros
-        if values.len() >= *max_length {
-            return ();
-        }
-
-        //if we already have the item, then increase its priority
-        if let Some(entry) = values.get_mut(&item) {
-            let priority = entry.0;
-
-            //take it out of the old priority bucket and put it into the new one
-            let itm = self.priorities.get_mut(&priority).unwrap().take(&item).unwrap();
-            self.priorities.entry(priority).or_insert_with(|| BTreeSet::new()).insert(itm);
-
-            entry.0 += 1;
-        }
-        else {
-            values.insert(item.clone(), (*zero_point + 1, key));
-            priorities.entry(*zero_point + 1).or_insert_with(|| BTreeSet::new()).insert(item);
+            priorities.push_front((item, key))
         }
     }
 }

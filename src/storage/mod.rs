@@ -1,56 +1,52 @@
 use std::{
+    borrow::Borrow,
     cell::Cell,
-    fs::File,
-    io::{self, Seek},
+    fs::{remove_file, File},
+    io::{self, Seek, Write},
     ops::{Deref, DerefMut},
     os::fd::AsFd,
     path::PathBuf,
 };
-
-use serde::{de::DeserializeOwned, ser::Error, Deserialize, Serialize};
 
 enum Seq<T> {
     InteriorMutable(Cell<Option<Box<T>>>),
     Safe(Box<T>),
 }
 
+use serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use Seq::*;
 
-pub struct Storage<T> {
+pub struct Storage<D, T>
+where
+    T: SerializeMinimal,
+    for<'a> T: DeserializeFromMinimal<ExternalData<'a> = &'a D>,
+{
     inner: Seq<T>,
     dirty: bool,
     path: PathBuf,
     file: File,
+    deserialize_data: D,
 }
 
-impl<T: Serialize + DeserializeOwned> Serialize for Storage<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        //only attempt to flush if it's dirty
-        if false && self.dirty {
-            match self.flush() {
-                Some(t) => t.map_err(|_| S::Error::custom("Unable to flush Storage"))?,
-                None => {}
-            }
-        }
+pub mod serialize_min;
 
-        PathBuf::serialize(&self.path, serializer)
+pub trait StorageReachable: SerializeMinimal {
+    fn flush_children<'a>(&'a self, data: Self::ExternalData<'a>) -> Result<(), io::Error> {
+        Ok(())
     }
 }
 
-impl<'de, T: Serialize + DeserializeOwned> Deserialize<'de> for Storage<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        PathBuf::deserialize(deserializer).map(|x| Storage::open(x))
-    }
-}
-
-impl<'de, T: Serialize + DeserializeOwned> Storage<T> {
-    pub fn new(id: PathBuf, value: T) -> Self {
+impl<D, T> Storage<D, T>
+where
+    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
+    T: 'static + StorageReachable + SerializeMinimal,
+    for<'a> T: DeserializeFromMinimal<ExternalData<'a> = &'a D>,
+{
+    pub fn new<'a>(
+        id: PathBuf,
+        value: T,
+        deserialize_data: D,
+    ) -> Self {
         let file = File::options()
             .create(true)
             .read(true)
@@ -58,17 +54,19 @@ impl<'de, T: Serialize + DeserializeOwned> Storage<T> {
             .open(&id)
             .unwrap();
 
-        bincode::serialize_into(&file, &value).unwrap();
-
         Self {
             inner: Seq::new(value),
             path: id,
             file,
             dirty: false,
+            deserialize_data,
         }
     }
 
-    pub fn open(id: PathBuf) -> Self {
+    pub fn open(
+        id: PathBuf,
+        deserialize_data: D,
+    ) -> Self {
         let file = File::options()
             .create(false)
             .read(true)
@@ -81,22 +79,37 @@ impl<'de, T: Serialize + DeserializeOwned> Storage<T> {
             path: id,
             file,
             dirty: true,
+            deserialize_data,
         }
     }
 
-    pub fn flush(&self) -> Option<Result<(), io::Error>> {
+    pub fn flush<'a>(
+        &'a self,
+        serialize_data: <T as SerializeMinimal>::ExternalData<'a>,
+    ) -> Option<Result<(), io::Error>> {
+        if !self.dirty {
+            return Some(Ok(()));
+        }
+
         let value = self.inner.as_ref()?;
 
+        let mut file_clone = self.file.try_clone().unwrap();
+
         //this whole struct is non-sync, so we can do this fearlessly
-        unsafe {
-            let fd = &self.file as *const File;
+        file_clone.rewind().unwrap();
+        file_clone.set_len(0).unwrap();
 
-            fd.cast_mut().as_mut().unwrap_unchecked().rewind().unwrap();
+        let e = value.minimally_serialize(&mut file_clone, serialize_data);
+
+        match file_clone.flush() {
+            Ok(_) => {}
+            Err(e) => return Some(Err(e)),
         }
-        self.file.set_len(0).unwrap();
 
-        let e = bincode::serialize_into(&self.file, value)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+        match value.flush_children(serialize_data) {
+            Ok(_) => {}
+            Err(e) => return Some(Err(e)),
+        }
 
         match e {
             Ok(()) => {
@@ -118,28 +131,14 @@ impl<'de, T: Serialize + DeserializeOwned> Storage<T> {
         *f = false;
     }
 
-    pub fn modify<U>(&mut self, mut callback: impl FnMut(&mut T) -> U) -> U {
-        self.file.rewind().unwrap();
-
-        let file_clone = self.file.try_clone().unwrap();
-
-        self.dirty = true;
-
-        let val = self.deref_mut();
-
-        let result = callback(val);
-
-        bincode::serialize_into(file_clone, val).unwrap();
-
-        result
-    }
-
     pub fn deref(&self) -> &T {
         if let Some(f) = self.inner.as_ref() {
             return f;
         }
 
-        let val: T = bincode::deserialize_from(&self.file).unwrap();
+        let mut file_clone = self.file.try_clone().unwrap();
+
+        let val: T = T::deserialize_minimal(&mut file_clone, &self.deserialize_data).unwrap();
 
         //assign to nothing to ignore the option
         let _ = self.inner.fill_unsafe(val);
@@ -147,17 +146,23 @@ impl<'de, T: Serialize + DeserializeOwned> Storage<T> {
         return self.inner.as_ref().unwrap();
     }
 
-    pub fn deref_mut(&mut self) -> &mut T {
+    pub fn modify<U>(&mut self, func: impl FnOnce(&mut T) -> U) -> U {
+        //read and fill if we're empty currently
         if self.inner.is_empty() {
-            let val: T = bincode::deserialize_from(&self.file).unwrap();
+            self.file.rewind().unwrap();
 
-            //assign to nothing to ignore the option
-            let _ = self.inner.fill(val);
+            self.inner.fill(
+                T::deserialize_minimal(&mut self.file, &self.deserialize_data).unwrap()
+            );
         }
 
         self.dirty = true;
 
-        return self.inner.as_mut().unwrap();
+        let self_inner = self.inner.as_mut().unwrap();
+
+        let result = func(self_inner);
+
+        result
     }
 }
 

@@ -1,95 +1,139 @@
-use std::marker::PhantomData;
-
-use serde::{
-    de::{self, DeserializeOwned, SeqAccess, Visitor},
-    ser::SerializeTuple,
-    Deserialize, Serialize,
+use std::{
+    io::{Seek, Write},
+    path::PathBuf,
+    rc::Rc,
 };
 
-use super::LongLatTree;
+use crate::{
+    compressor::varint::{from_varint, to_varint},
+    storage::{
+        serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
+        Storage,
+    },
+};
 
-impl<T: Serialize + DeserializeOwned> Serialize for LongLatTree<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut tuple = serializer.serialize_tuple(6)?;
+use super::{
+    bbox::{BoundingBox, DeltaBoundingBox, LongLatSplitDirection},
+    branch_id_creation, LongLatTree, RootTreeInfo, StoredTree,
+};
 
-        tuple.serialize_element(&*self.root_tree_info)?;
-        tuple.serialize_element(&self.bbox)?;
-        tuple.serialize_element(&self.direction)?;
-        tuple.serialize_element(&self.children)?;
-        tuple.serialize_element(&self.left_right_split)?;
-        tuple.serialize_element(&self.id)?;
+impl<T> SerializeMinimal for LongLatTree<T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+{
+    type ExternalData<'a> = <T as SerializeMinimal>::ExternalData<'a>;
 
-        tuple.end()
+    fn minimally_serialize<'o, 's: 'o, W: std::io::Write>(
+        &'o self,
+        write_to: &mut W,
+        external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        let has_left_right = self.left_right_split.is_some() as u8;
+        let has_children = !self.children.is_empty() as u8;
+
+        let mut file = self.root_tree_info.1.try_clone().unwrap();
+        let id_based_byte_offset = self.id / 4;
+        let offset_in_byte = (self.id % 4) * 2;
+
+        if file.metadata().unwrap().len() < (id_based_byte_offset + 2) {
+            file.set_len(id_based_byte_offset + 2)?;
+        }
+        file.seek(std::io::SeekFrom::Start(id_based_byte_offset))
+            .unwrap();
+        let mut b = file.read_one().unwrap();
+
+        b |= has_left_right << (offset_in_byte + 1);
+        b |= has_children << offset_in_byte;
+
+        file.seek(std::io::SeekFrom::Start(id_based_byte_offset))
+            .unwrap();
+        file.write_all(&[b]).unwrap();
+
+        drop(file);
+
+        if !self.children.is_empty() {
+            write_to.write_all(to_varint::<usize>(self.children.len()).as_slice())?;
+
+            for (bbox, child) in self.children.iter() {
+                DeltaBoundingBox::minimally_serialize(bbox, write_to, ())?;
+                child.minimally_serialize(write_to, external_data)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
-impl<'de, T: Serialize + DeserializeOwned> Deserialize<'de> for LongLatTree<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_tuple(6, LongLatTreeVisitor(PhantomData))
-    }
-}
+impl<T> DeserializeFromMinimal for LongLatTree<T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+{
+    type ExternalData<'a> = &'a (RootTreeInfo, u64, BoundingBox<i32>);
 
-struct LongLatTreeVisitor<T>(PhantomData<T>);
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+        let (ref root_tree_info, id, bbox) = external_data;
 
-impl<'de, T: DeserializeOwned + Serialize> Visitor<'de> for LongLatTreeVisitor<T> {
-    type Value = LongLatTree<T>;
+        let mut file = root_tree_info.1.try_clone().unwrap();
+        let id_based_byte_offset = id / 4;
+        let offset_in_byte = (id % 4) * 2;
 
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a tuple of the serialized tree")
-    }
+        file.seek(std::io::SeekFrom::Start(id_based_byte_offset))?;
+        let header_chunk = file.read_one()?;
 
-    fn visit_seq<V>(self, mut seq: V) -> Result<LongLatTree<T>, V::Error>
-    where
-        V: serde::de::SeqAccess<'de>,
-    {
-        let root_tree_info = std::rc::Rc::new(seq.next_element()?.ok_or_else(|| de::Error::invalid_length(0, &self))?);
-        let bbox = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
-        let direction = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(2, &self))?;
-        let children = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(3, &self))?;
-        let left_right_split = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(4, &self))?;
-        let id = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(5, &self))?;
+        let has_left_right = (header_chunk >> (offset_in_byte + 1)) & 1 == 1;
+        let has_children = (header_chunk >> offset_in_byte) & 1 == 1;
 
-        Ok(LongLatTree {
-            root_tree_info,
-            bbox,
+        let direction_is_default = id.leading_zeros() % 2 == 1;
+
+        let direction = if direction_is_default {
+            LongLatSplitDirection::default()
+        } else {
+            !LongLatSplitDirection::default()
+        };
+
+        let child_len: usize = if has_children { from_varint(from)? } else { 0 };
+
+        let mut children = Vec::with_capacity(child_len);
+
+        for _ in 0..child_len {
+            let delt_bbox = DeltaBoundingBox::<u32>::deserialize_minimal(from, ())?;
+            let abs_bbox = delt_bbox.absolute(&bbox);
+
+            let item = T::deserialize_minimal(from, &abs_bbox)?;
+
+            children.push((delt_bbox, item))
+        }
+
+        let left_right_split = if has_left_right {
+            let (left_path, left_id) = branch_id_creation(&root_tree_info, *id, 0);
+            let (right_path, right_id) = branch_id_creation(&root_tree_info, *id, 1);
+
+            let (left_bbox, right_bbox) = bbox.split_on_axis(&direction);
+
+            let left_data = (Rc::clone(&root_tree_info), left_id, left_bbox);
+            let right_data = (Rc::clone(&root_tree_info), right_id, right_bbox);
+
+            Some((
+                StoredTree::<T>::open(left_path, left_data),
+                StoredTree::<T>::open(right_path, right_data),
+            ))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            root_tree_info: Rc::clone(&external_data.0),
+            bbox: bbox.clone(),
             direction,
             children,
             left_right_split,
-            id,
+            id: external_data.1,
         })
     }
-}
-
-struct DurationVisitor;
-
-impl<'de> Visitor<'de> for DurationVisitor {
-    fn visit_seq<V>(self, mut seq: V) -> Result<Duration, V::Error>
-    where
-        V: SeqAccess<'de>,
-    {
-        let secs = seq
-            .next_element()?
-            .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-        let nanos = seq
-            .next_element()?
-            .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-        Ok(Duration { secs, nanos })
-    }
-
-    type Value = Duration;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a tuple of the serialized tree")
-    }
-}
-
-struct Duration {
-    secs: u32,
-    nanos: u32,
 }

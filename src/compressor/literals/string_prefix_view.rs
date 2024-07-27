@@ -6,12 +6,14 @@ pub struct StrAsciiPrefixView {
 impl StrAsciiPrefixView {
     pub fn new(mut prefix: String, max_length: usize) -> Self {
 
+        let prefix_len = prefix.as_bytes().len();
+
         for _ in prefix.len()..max_length {
             prefix.push('\0');
         }
 
         Self {
-            prefix_len: prefix.as_bytes().len(),
+            prefix_len,
             string: prefix
         }
     }
@@ -28,6 +30,6 @@ impl StrAsciiPrefixView {
             original_bytes[self.prefix_len..(self.prefix_len + bytelen)].copy_from_slice(added_bytes);
         }
 
-        &self.string[self.prefix_len..(self.prefix_len + bytelen)]
+        &self.string[0..(self.prefix_len + bytelen)]
     }
 }

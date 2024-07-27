@@ -1,43 +1,93 @@
-use std::{
-    collections::{btree_set, BTreeSet},
-    mem,
-    path::PathBuf,
-    rc::Rc,
+use std::{fs::File, path::PathBuf, rc::Rc};
+
+use super::{
+    bbox::{BoundingBox, DeltaBoundingBox, LongLatSplitDirection},
+    NODE_SATURATION_POINT,
+};
+use crate::storage::{
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    Storage,
 };
 
-use super::{bbox::{BoundingBox, LongLatSplitDirection}, NODE_SATURATION_POINT};
-use super::compare_by::BoundingBoxOrderedByXOrY;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use crate::storage::Storage;
+pub type StoredTree<T> = Storage<(RootTreeInfo, u64, BoundingBox<i32>), LongLatTree<T>>;
+
 pub struct LongLatTree<T>
 where
-    T: Serialize + DeserializeOwned,
+    T: 'static
+        + SerializeMinimal
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
 {
-    pub(super) root_tree_info: Rc<RootTreeInfo>,
+    pub(super) root_tree_info: RootTreeInfo,
     pub(super) bbox: BoundingBox<i32>,
     pub(super) direction: LongLatSplitDirection,
-    pub(super) children: BTreeSet<BoundingBoxOrderedByXOrY<i32, T>>,
-    pub(super) left_right_split: Option<(Storage<LongLatTree<T>>, Storage<LongLatTree<T>>)>,
+    pub(super) children: Vec<(DeltaBoundingBox<u32>, T)>,
+    pub(super) left_right_split: Option<(StoredTree<T>, StoredTree<T>)>,
     pub(super) id: u64,
 }
 
-#[derive(Deserialize, Serialize)]
-pub(super) struct RootTreeInfo(PathBuf);
-
-pub struct LongLatTreeItems<'a, T: Serialize + DeserializeOwned> {
-    query_bbox: &'a BoundingBox<i32>,
-    parent_tree_stack: Vec<&'a Storage<LongLatTree<T>>>,
-    current_tree_children: btree_set::Iter<'a, BoundingBoxOrderedByXOrY<i32, T>>,
+impl<T> crate::storage::StorageReachable for LongLatTree<T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
+{
+    fn flush_children<'a>(
+        &'a self,
+        data: <T as SerializeMinimal>::ExternalData<'a>,
+    ) -> Result<(), std::io::Error> {
+        match &self.left_right_split {
+            Some((l, r)) => {
+                match l.flush(data) {
+                    Some(Err(e)) => return Err(e),
+                    Some(Ok(())) | None => {}
+                }
+                match r.flush(data) {
+                    Some(Err(e)) => return Err(e),
+                    Some(Ok(())) | None => {}
+                }
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
 }
 
-impl<'a, T: Serialize + DeserializeOwned> Iterator for LongLatTreeItems<'a, T> {
+pub(super) type RootTreeInfo = Rc<(PathBuf, File)>;
+
+pub struct LongLatTreeItems<'a, T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>,
+    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+{
+    query_bbox: &'a BoundingBox<i32>,
+    parent_tree_stack: Vec<&'a StoredTree<T>>,
+    current_tree_children: (
+        BoundingBox<i32>,
+        std::slice::Iter<'a, (DeltaBoundingBox<u32>, T)>,
+    ),
+}
+
+impl<'a, T> Iterator for LongLatTreeItems<'a, T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>,
+    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+{
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(next) = self.current_tree_children.next() {
-                if self.query_bbox.contains(&next.0) {
-                    return Some(&next.2);
+            if let Some(next) = self.current_tree_children.1.next() {
+                if self
+                    .query_bbox
+                    .contains(&next.0.absolute(&self.current_tree_children.0))
+                {
+                    return Some(&next.1);
                 }
             } else {
                 let tree = self.parent_tree_stack.pop()?.deref();
@@ -45,19 +95,25 @@ impl<'a, T: Serialize + DeserializeOwned> Iterator for LongLatTreeItems<'a, T> {
                     self.parent_tree_stack.push(l);
                     self.parent_tree_stack.push(r);
                 }
-                self.current_tree_children = tree.children.iter();
+                self.current_tree_children = (tree.bbox, tree.children.iter());
             }
         }
     }
 }
 
-impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
-    pub fn new(bbox: BoundingBox<i32>, storage_path: PathBuf) -> Self {
+impl<T> LongLatTree<T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+{
+    pub fn new(bbox: BoundingBox<i32>, root_tree_info: RootTreeInfo) -> Self {
         LongLatTree {
-            root_tree_info: Rc::new(RootTreeInfo(storage_path)),
+            root_tree_info,
             bbox,
             direction: LongLatSplitDirection::default(),
-            children: BTreeSet::new(),
+            children: Vec::new(),
             left_right_split: None,
             id: 1,
         }
@@ -79,7 +135,7 @@ impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
                     return LongLatTreeItems {
                         query_bbox,
                         parent_tree_stack: vec![left, right],
-                        current_tree_children: self.children.iter(),
+                        current_tree_children: (self.bbox, self.children.iter()),
                     };
                 }
             }
@@ -87,7 +143,7 @@ impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
                 return LongLatTreeItems {
                     query_bbox,
                     parent_tree_stack: Vec::with_capacity(0),
-                    current_tree_children: self.children.iter(),
+                    current_tree_children: (self.bbox, self.children.iter()),
                 }
             }
         }
@@ -97,24 +153,38 @@ impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
         match &mut self.left_right_split {
             Some((left, right)) => {
                 if left.deref().bbox.contains(&bbox) {
-                    left.deref_mut().insert(bbox, item);
+                    left.modify(|tree| tree.insert(bbox, item));
                     return;
                 } else if right.deref().bbox.contains(&bbox) {
-                    right.deref_mut().insert(bbox, item);
+                    right.modify(|tree| tree.insert(bbox, item));
                     return;
                 } else {
-                    self.children
-                        .insert(tree_child_of(bbox, item, self.direction));
+                    self.children.push((bbox.interior_delta(&self.bbox), item));
                 }
             }
             None => {
                 if self.children.len() < NODE_SATURATION_POINT {
-                    self.children
-                        .insert(tree_child_of(bbox, item, self.direction));
+                    self.children.push((bbox.interior_delta(&self.bbox), item));
                 } else {
                     self.split_left_right();
                     return self.insert(bbox, item);
                 }
+            }
+        }
+    }
+
+    pub fn expand_to_depth(&mut self, depth: usize) {
+        if self.left_right_split.is_none() {
+            self.split_left_right();
+        }
+
+        if depth > 1 {
+            match self.left_right_split {
+                Some((ref mut l, ref mut r)) => {
+                    l.modify(|tree| tree.expand_to_depth(depth - 1));
+                    r.modify(|tree| tree.expand_to_depth(depth - 1));
+                }
+                None => unreachable!(),
             }
         }
     }
@@ -124,33 +194,29 @@ impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
 
         let (left_bb, right_bb) = self.bbox.split_on_axis(&self.direction);
 
-        let new_direction = !self.direction;
+        let mut left_children = Vec::new();
+        let mut both_children = Vec::new();
+        let mut right_children = Vec::new();
 
-        let mut left_children = BTreeSet::new();
-        let mut both_children = BTreeSet::new();
+        while let Some((bbox, item)) = self.children.pop() {
+            let bb_abs = bbox.absolute(&self.bbox);
 
-        let right_children = self.children.split_off(
-            //safety: we only compare by the bounding box; the item is completely irrelevant.
-            &tree_child_of(right_bb, Default::default(), self.direction),
-        );
-
-        while let Some(BoundingBoxOrderedByXOrY(bbox, direction, item)) = self.children.pop_first()
-        {
-            if left_bb.contains(&bbox) {
-                left_children.insert(tree_child_of(bbox, item, new_direction));
+            if left_bb.contains(&bb_abs) {
+                left_children.push((bb_abs.interior_delta(&left_bb), item));
+            } else if right_bb.contains(&bb_abs) {
+                right_children.push((bb_abs.interior_delta(&right_bb), item));
             } else {
-                both_children.insert(BoundingBoxOrderedByXOrY(bbox, self.direction, item));
+                both_children.push((bbox, item));
             }
         }
 
-        self.children.append(&mut both_children);
-        drop(both_children);
+        self.children.extend(both_children);
 
         let (left_path, left_id) = self.make_branch_id(0);
         let (right_path, right_id) = self.make_branch_id(1);
 
         self.left_right_split = Some((
-            Storage::new(
+            StoredTree::new(
                 left_path,
                 LongLatTree {
                     root_tree_info: Rc::clone(&self.root_tree_info),
@@ -160,8 +226,9 @@ impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
                     left_right_split: None,
                     id: left_id,
                 },
+                (Rc::clone(&self.root_tree_info), left_id, right_bb),
             ),
-            Storage::new(
+            StoredTree::new(
                 right_path,
                 LongLatTree {
                     root_tree_info: Rc::clone(&self.root_tree_info),
@@ -171,31 +238,28 @@ impl<T: Serialize + DeserializeOwned + Default> LongLatTree<T> {
                     left_right_split: None,
                     id: right_id,
                 },
+                (Rc::clone(&self.root_tree_info), right_id, left_bb),
             ),
         ))
     }
 
     fn make_branch_id(&self, direction: u64) -> (PathBuf, u64) {
-        let new_id = (self.id << 1) | direction;
-
-        let info = self.root_tree_info.0.join(format!("{}", new_id));
-
-        return (info, new_id);
+        return branch_id_creation(&self.root_tree_info, self.id, direction);
     }
 }
 
-trait UpdateOnBasisLongLatMove {
-    fn update(&mut self, old_basis: BoundingBox<i32>, new_basis: BoundingBox<i32>);
+pub(super) fn branch_id_creation(
+    root_path: &RootTreeInfo,
+    id: u64,
+    direction_bit: u64,
+) -> (PathBuf, u64) {
+    let new_id = (id << 1) | direction_bit;
+
+    let info = root_path.0.join(format!("{:x}", new_id));
+
+    (info, new_id)
 }
 
-impl<T> UpdateOnBasisLongLatMove for T {
-    fn update(&mut self, old_basis: BoundingBox<i32>, new_basis: BoundingBox<i32>) {}
-}
-
-fn tree_child_of<T>(
-    bbox: BoundingBox<i32>,
-    item: T,
-    direction: LongLatSplitDirection,
-) -> BoundingBoxOrderedByXOrY<i32, T> {
-    BoundingBoxOrderedByXOrY::<i32, T>(bbox, direction, item)
+pub trait UpdateOnBasisLongLatMove {
+    fn update(&mut self, old_basis: Self, new_basis: Self);
 }

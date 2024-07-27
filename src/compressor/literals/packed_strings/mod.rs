@@ -1,57 +1,99 @@
-use super::{literal_value::LiteralValue, LiteralPool, OsmLiteralSerializable};
+use crate::{
+    compressor::{
+        is_final::IterIsFinal,
+        varint::{from_varint, to_varint},
+    },
+    storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+};
 
+pub mod latin_lowercase_fivebit;
+pub mod non_remainder_encodings;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum PackedString {
-    LowerLatinUnderscoreHyphenColonFiveBit(Box<[u8]>),
-    CasedLatinUnderscoreHyphenColonSixBit(Box<[u8]>),
-    Ascii(Box<[u8]>),
-    Unicode(String),
+use non_remainder_encodings::{
+    read_some_non_remainder_encoding, try_into_some_non_remainder_encoding,
+};
+
+#[derive(Clone, Copy)]
+pub enum StringSerialVariation {
+    Fivebit,
+    NonRemainder,
+    Ascii,
+    Unicode,
 }
 
+impl SerializeMinimal for String {
+    type ExternalData<'a> = &'a mut (StringSerialVariation, u8);
 
-impl<T: AsRef<str>> From<T> for PackedString {
-    fn from(value: T) -> Self {
-        let value = value.as_ref();
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        extra_info_nibble: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        let value: &str = self.as_ref();
         let len = value.as_bytes().len();
 
+        if let Some((nibble, bytes)) = try_into_some_non_remainder_encoding(value) {
+            extra_info_nibble.1 |= nibble;
+            extra_info_nibble.0 = StringSerialVariation::NonRemainder;
+
+            return write_to.write_all(&bytes);
+        }
+
+        if latin_lowercase_fivebit::fits_charset(value) {
+            let (nibble, bytes) = latin_lowercase_fivebit::to_charset(&value);
+
+            extra_info_nibble.1 |= nibble;
+            extra_info_nibble.0 = StringSerialVariation::Fivebit;
+
+            return write_to.write_all(&bytes);
+        }
+
         if value.is_ascii() {
-            let last_index = len - 1;
-            Self::Ascii(value.bytes().into_iter().enumerate().map(|(i, x)| {
-                if i == last_index {
-                    x | 0b1000_0000
-                } else {
-                    x
-                }
-            }).collect::<Vec<_>>().into_boxed_slice())
-        } else {
-            Self::Unicode(value.to_string())
+            extra_info_nibble.0 = StringSerialVariation::Ascii;
+
+            return write_to.write_all(
+                &value
+                    .bytes()
+                    .into_iter()
+                    .is_final()
+                    .map(|(f, x)| if f { x | 0b1000_0000 } else { x })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            );
         }
+
+        extra_info_nibble.0 = StringSerialVariation::Unicode;
+
+        write_to.write_all(&to_varint(value.as_bytes().len()))?;
+        write_to.write_all(value.as_bytes())
     }
 }
 
-impl<'a> From<PackedString> for String {
-    fn from(value: PackedString) -> Self {
-        match value {
-            PackedString::LowerLatinUnderscoreHyphenColonFiveBit(bytes) => {
-                todo!()
+impl DeserializeFromMinimal for String {
+    type ExternalData<'a> = &'a (StringSerialVariation, u8);
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        let (codec, header_nibble) = external_data;
+
+        match codec {
+            StringSerialVariation::Fivebit => {
+                latin_lowercase_fivebit::latin_lowercase_fivebit_to_string(*header_nibble, from)
             }
-            PackedString::CasedLatinUnderscoreHyphenColonSixBit(_) => todo!(),
-            PackedString::Unicode(s) => s,
-            PackedString::Ascii(s) => s.into_iter().map(|x| (x ^ 0b1000_0000) as char).collect::<String>(),
-        }
-    }
-}
+            StringSerialVariation::NonRemainder => {
+                read_some_non_remainder_encoding(*header_nibble, from)
+            }
+            StringSerialVariation::Ascii => todo!(),
+            StringSerialVariation::Unicode => {
+                let len = from_varint::<usize>(from)?;
+                let mut buf = Vec::with_capacity(len);
+                from.read_exact(&mut buf[0..len])?;
 
-impl OsmLiteralSerializable for PackedString {
-    type Category = LiteralValue;
-
-    fn serialize_to_pool(&self, _pool: &mut LiteralPool<LiteralValue>) -> Vec<u8> {
-        match self {
-            PackedString::LowerLatinUnderscoreHyphenColonFiveBit(b) => b.iter().copied().collect(),
-            PackedString::CasedLatinUnderscoreHyphenColonSixBit(b) => b.iter().copied().collect(),
-            PackedString::Ascii(b) => b.iter().copied().collect(),
-            PackedString::Unicode(b) => b.bytes().collect(),
+                return String::from_utf8(buf)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+            }
         }
     }
 }

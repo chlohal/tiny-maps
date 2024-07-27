@@ -1,7 +1,7 @@
-use std::{env::{self, args_os}, fs::File, os};
+use std::{env::{self, args_os}, fs::File};
 
-use offline_tiny_maps::{compressor::Compressor, postgres_objects::{NODE_OBJ, RELATION_OBJ, WAY_OBJ}};
-use osmpbfreader::{blobs::result_blob_into_iter, OsmId};
+use offline_tiny_maps::compressor::Compressor;
+use osmpbfreader::blobs::result_blob_into_iter;
 
 use par_map::ParMap;
 
@@ -25,15 +25,17 @@ fn main() -> Result<(), postgres::Error> {
     let mut last_blob_id = usize::MAX;
 
     for (blob_id, obj) in blobs {
-        let Ok(mut obj) = obj else { continue; };
+        let Ok(obj) = obj else { continue; };
 
-        compressor.write_element(&mut obj);
+        compressor.write_element(obj);
 
         if blob_id != last_blob_id {
             compressor.flush_to_storage().unwrap();
             last_blob_id = blob_id;
         }
     }
+
+    compressor.flush_to_storage().unwrap();
 
     Ok(())
 }
