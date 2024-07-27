@@ -13,8 +13,11 @@ enum Seq<T> {
     Safe(Box<T>),
 }
 
+use lazy_file::LazyFile;
 use serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use Seq::*;
+
+const JUMBLE_COLLECTOR_MAX_GEN: usize = 250;
 
 pub struct Storage<D, T>
 where
@@ -23,15 +26,17 @@ where
 {
     inner: Seq<T>,
     dirty: bool,
-    path: PathBuf,
-    file: File,
+    file: LazyFile,
     deserialize_data: D,
+    jumble_collector_generation: usize,
 }
 
 pub mod serialize_min;
+mod lazy_file;
 
-pub trait StorageReachable: SerializeMinimal {
-    fn flush_children<'a>(&'a self, data: Self::ExternalData<'a>) -> Result<(), io::Error> {
+pub trait StorageReachable<DeserializationData>: SerializeMinimal + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a DeserializationData> {
+    
+    fn flush_children<'a>(&'a mut self, _serialize_data: <Self as SerializeMinimal>::ExternalData<'a>) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -39,7 +44,7 @@ pub trait StorageReachable: SerializeMinimal {
 impl<D, T> Storage<D, T>
 where
     for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
-    T: 'static + StorageReachable + SerializeMinimal,
+    T: 'static + StorageReachable<D> + SerializeMinimal,
     for<'a> T: DeserializeFromMinimal<ExternalData<'a> = &'a D>,
 {
     pub fn new<'a>(
@@ -56,10 +61,10 @@ where
 
         Self {
             inner: Seq::new(value),
-            path: id,
-            file,
+            file: LazyFile::new(id),
             dirty: false,
             deserialize_data,
+            jumble_collector_generation: 0,
         }
     }
 
@@ -76,21 +81,61 @@ where
 
         Self {
             inner: Seq::empty(),
-            path: id,
-            file,
+            file: LazyFile::new(id),
             dirty: true,
             deserialize_data,
+            jumble_collector_generation: 0,
+        }
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn increase_and_check_jumble_collector(&mut self) {
+        self.jumble_collector_generation += 1;
+
+        if self.jumble_collector_generation >= JUMBLE_COLLECTOR_MAX_GEN {
+            self.inner.free();
         }
     }
 
     pub fn flush<'a>(
-        &'a self,
+        &'a mut self,
         serialize_data: <T as SerializeMinimal>::ExternalData<'a>,
     ) -> Option<Result<(), io::Error>> {
         if !self.dirty {
+            self.increase_and_check_jumble_collector();
             return Some(Ok(()));
         }
 
+        match self.flush_without_children_no_dirty_check(serialize_data) {
+            Some(Err(e)) => return Some(Err(e)),
+            Some(_) | None => {}
+        }
+
+        match self.inner.as_mut()?.flush_children(serialize_data) {
+            Ok(_) => Some(Ok(())),
+            Err(e) => return Some(Err(e)),
+        }
+    }
+
+    pub fn flush_without_children<'a, 's: 'a>(
+        &'a mut self,
+        serialize_data: <T as SerializeMinimal>::ExternalData<'s>,
+    ) -> Option<Result<(), io::Error>> {
+        if self.dirty {
+            return self.flush_without_children_no_dirty_check(serialize_data);
+        } else {
+            self.increase_and_check_jumble_collector();
+            return Some(Ok(()));
+        }
+    }
+
+    fn flush_without_children_no_dirty_check<'a, 's: 'a>(
+        &'a mut self,
+        serialize_data: <T as SerializeMinimal>::ExternalData<'s>,
+    ) -> Option<Result<(), io::Error>> {
         let value = self.inner.as_ref()?;
 
         let mut file_clone = self.file.try_clone().unwrap();
@@ -99,14 +144,16 @@ where
         file_clone.rewind().unwrap();
         file_clone.set_len(0).unwrap();
 
-        let e = value.minimally_serialize(&mut file_clone, serialize_data);
+        //avoid many small allocations by serializing to a buffer first
+        //this does the same thing as BufWriter, but it's easier & does the same
+        //for performance
+        let mut buf = Vec::new();
+
+        value.minimally_serialize(&mut buf, serialize_data).unwrap();
+
+        let e = file_clone.write_all(&buf);
 
         match file_clone.flush() {
-            Ok(_) => {}
-            Err(e) => return Some(Err(e)),
-        }
-
-        match value.flush_children(serialize_data) {
             Ok(_) => {}
             Err(e) => return Some(Err(e)),
         }
@@ -146,8 +193,7 @@ where
         return self.inner.as_ref().unwrap();
     }
 
-    pub fn modify<U>(&mut self, func: impl FnOnce(&mut T) -> U) -> U {
-        //read and fill if we're empty currently
+    fn ensure_filled(&mut self) {
         if self.inner.is_empty() {
             self.file.rewind().unwrap();
 
@@ -155,6 +201,19 @@ where
                 T::deserialize_minimal(&mut self.file, &self.deserialize_data).unwrap()
             );
         }
+    }
+
+    pub fn ref_mut<'a>(&'a mut self) -> &'a mut T {
+        self.ensure_filled();
+
+        self.dirty = true;
+
+        //this reference's lifetime will have to expire in order to allow a future mutable call (such as flush())
+        self.inner.as_mut().unwrap()
+    }
+
+    pub fn modify<U>(&mut self, func: impl FnOnce(&mut T) -> U) -> U {
+        self.ensure_filled();
 
         self.dirty = true;
 
@@ -247,17 +306,6 @@ impl<T> Seq<T> {
         return Some(());
     }
 
-    pub fn safe_ref_mut(&mut self) -> Option<&mut T> {
-        if !self.is_safe() {
-            self.upgrade_safe();
-        }
-
-        match self {
-            InteriorMutable(_) => None,
-            Safe(v) => Some(v.as_mut()),
-        }
-    }
-
     fn as_ref(&self) -> Option<&T> {
         match self {
             InteriorMutable(cell) => match unsafe { cell.as_ptr().as_ref() } {
@@ -269,12 +317,17 @@ impl<T> Seq<T> {
     }
 
     fn as_mut(&mut self) -> Option<&mut T> {
-        match self {
-            InteriorMutable(cell) => match cell.get_mut() {
-                Some(t) => Some(t.as_mut()),
-                None => None,
-            },
-            Safe(ref mut b) => Some(b.as_mut()),
+        if !self.is_safe() {
+            self.upgrade_safe();
         }
+
+        match self {
+            InteriorMutable(_) => None,
+            Safe(v) => Some(v.as_mut()),
+        }
+    }
+    
+    fn free(&mut self)  {
+        *self = Seq::InteriorMutable(Cell::new(None));
     }
 }

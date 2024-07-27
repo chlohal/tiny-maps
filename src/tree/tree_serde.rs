@@ -1,27 +1,33 @@
 use std::{
+    collections::{BinaryHeap, VecDeque},
     io::{Seek, Write},
     path::PathBuf,
     rc::Rc,
 };
 
+use sorted_vec::SortedVec;
+
 use crate::{
-    compressor::varint::{from_varint, to_varint},
+    compressor::varint::{from_varint, ToVarint},
     storage::{
         serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
-        Storage,
+        Storage, StorageReachable,
     },
 };
 
 use super::{
-    bbox::{BoundingBox, DeltaBoundingBox, LongLatSplitDirection},
-    branch_id_creation, LongLatTree, RootTreeInfo, StoredTree,
+    bbox::{BoundingBox, DeltaBoundingBox, DeltaFriendlyU32Offset, LongLatSplitDirection},
+    branch_id_creation,
+    compare_by::OrderByBBox,
+    LongLatTree, RootTreeInfo, StoredTree,
 };
 
 impl<T> SerializeMinimal for LongLatTree<T>
 where
     T: 'static
         + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
+        + Clone,
     for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
 {
     type ExternalData<'a> = <T as SerializeMinimal>::ExternalData<'a>;
@@ -55,11 +61,17 @@ where
         drop(file);
 
         if !self.children.is_empty() {
-            write_to.write_all(to_varint::<usize>(self.children.len()).as_slice())?;
+            self.children.len().write_varint(write_to)?;
 
-            for (bbox, child) in self.children.iter() {
-                DeltaBoundingBox::minimally_serialize(bbox, write_to, ())?;
+            let mut last_bbox = DeltaBoundingBox::<u32>::zero();
+
+            for OrderByBBox(bbox, child) in self.children.iter() {
+                let offset = bbox.delta_friendly_offset(&last_bbox);
+
+                offset.minimally_serialize(write_to, ())?;
                 child.minimally_serialize(write_to, external_data)?;
+
+                last_bbox = bbox.to_owned();
             }
         }
 
@@ -71,12 +83,16 @@ impl<T> DeserializeFromMinimal for LongLatTree<T>
 where
     T: 'static
         + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
+        + Clone,
     for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
 {
     type ExternalData<'a> = &'a (RootTreeInfo, u64, BoundingBox<i32>);
 
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
         let (ref root_tree_info, id, bbox) = external_data;
 
         let mut file = root_tree_info.1.try_clone().unwrap();
@@ -99,15 +115,20 @@ where
 
         let child_len: usize = if has_children { from_varint(from)? } else { 0 };
 
-        let mut children = Vec::with_capacity(child_len);
+        let mut children = SortedVec::with_capacity(child_len);
+
+        let mut last_bbox = DeltaFriendlyU32Offset::zero();
 
         for _ in 0..child_len {
-            let delt_bbox = DeltaBoundingBox::<u32>::deserialize_minimal(from, ())?;
+            let delt_delt_bbox = DeltaFriendlyU32Offset::deserialize_minimal(from, ())?;
+            let delt_bbox = DeltaBoundingBox::<u32>::from_delta_friendly_offset(&delt_delt_bbox, &last_bbox);
             let abs_bbox = delt_bbox.absolute(&bbox);
+
+            last_bbox = delt_delt_bbox;
 
             let item = T::deserialize_minimal(from, &abs_bbox)?;
 
-            children.push((delt_bbox, item))
+            children.push(OrderByBBox(delt_bbox, item));
         }
 
         let left_right_split = if has_left_right {
@@ -135,5 +156,41 @@ where
             left_right_split,
             id: external_data.1,
         })
+    }
+}
+
+impl<T> StorageReachable<(RootTreeInfo, u64, BoundingBox<i32>)> for LongLatTree<T>
+where
+    T: 'static
+        + SerializeMinimal
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
+        + Clone,
+    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
+{
+    fn flush_children<'a>(&'a mut self, serialize_data: <Self as SerializeMinimal>::ExternalData<'a>) -> std::io::Result<()> {
+        let mut stack = VecDeque::new();
+
+        if let Some((l,r)) = &mut self.left_right_split {
+            stack.push_back(l);
+            stack.push_back(r);
+        }
+
+        while let Some(item) = stack.pop_front() {
+            if let Some(result) = item.flush_without_children(serialize_data) {
+                result?;
+            }
+
+            if let Some((l,r)) = &mut item.ref_mut().left_right_split {
+                if l.is_dirty() {
+                    stack.push_back(l);
+                }
+
+                if r.is_dirty() {
+                    stack.push_back(r);
+                }
+            }
+        }
+
+        Ok(())
     }
 }

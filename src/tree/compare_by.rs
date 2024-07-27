@@ -1,32 +1,24 @@
-use std::{cmp::Ordering, ops::Deref};
+use super::bbox::DeltaBoundingBox;
 
-use serde::{Deserialize, Serialize};
+pub struct OrderByBBox<T>(pub DeltaBoundingBox<u32>, pub T);
 
-use super::bbox::{BoundingBox, DeltaBoundingBox, LongLatSplitDirection};
+impl<T> PartialOrd for OrderByBBox<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.morton_origin_point().partial_cmp(&other.0.morton_origin_point())
+    }
+}
+
+impl<T> Eq for OrderByBBox<T> {}
 
 
-#[derive(Deserialize, Serialize)]
-pub struct BoundingBoxOrderedByXOrY<T: Ord, I> (pub DeltaBoundingBox<T>, pub LongLatSplitDirection, pub I);
-
-impl<T: Ord, I> PartialEq for BoundingBoxOrderedByXOrY<T, I> {
+impl<T> PartialEq for OrderByBBox<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(&other).is_eq()
-    }
-}
-impl<T: Ord, I> Eq for BoundingBoxOrderedByXOrY<T, I> {}
-
-
-impl<T: Ord, I> PartialOrd for BoundingBoxOrderedByXOrY<T, I> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        self.0.morton_origin_point().eq(&other.0.morton_origin_point())
     }
 }
 
-impl<T: Ord, I> Ord for BoundingBoxOrderedByXOrY<T, I> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.1 {
-            LongLatSplitDirection::Long => self.0.x().cmp(other.0.x()),
-            LongLatSplitDirection::Lat => self.0.x().cmp(other.0.x()),
-        }
+impl<T> Ord for OrderByBBox<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.morton_origin_point().cmp(&other.0.morton_origin_point())
     }
 }

@@ -6,6 +6,8 @@ use osmpbfreader::blobs::result_blob_into_iter;
 use par_map::ParMap;
 
 
+const WRITE_EVERY_N_CHUNKS: usize = 8;
+
 fn main() -> Result<(), postgres::Error> {
     let filename = args_os()
         .nth(1)
@@ -23,6 +25,7 @@ fn main() -> Result<(), postgres::Error> {
 
 
     let mut last_blob_id = usize::MAX;
+    let mut blobs_since_last_write = 0;
 
     for (blob_id, obj) in blobs {
         let Ok(obj) = obj else { continue; };
@@ -30,8 +33,13 @@ fn main() -> Result<(), postgres::Error> {
         compressor.write_element(obj);
 
         if blob_id != last_blob_id {
-            compressor.flush_to_storage().unwrap();
+            blobs_since_last_write += 1;
             last_blob_id = blob_id;
+        }
+
+        if blobs_since_last_write >= WRITE_EVERY_N_CHUNKS {
+            compressor.flush_to_storage().unwrap();
+            blobs_since_last_write = 0;
         }
     }
 

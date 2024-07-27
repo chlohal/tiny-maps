@@ -40,11 +40,11 @@ impl<'a, R: Read + ?Sized> Iterator for ReadingIterator<'a, R> {
 
 impl<T: Read + ?Sized> ReadExtReadOne for T {
     fn read_one(&mut self) -> Result<u8, std::io::Error> {
-        let mut r = 0u8;
+        let r = &mut [0u8];
 
-        self.read_exact(&mut [r])?;
+        self.read_exact(r)?;
 
-        Ok(r)
+        Ok(r[0])
     }
     
     fn reading_iterator<'a>(&'a mut self) -> ReadingIterator<'a, Self> {

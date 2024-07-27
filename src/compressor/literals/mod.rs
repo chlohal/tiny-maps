@@ -6,7 +6,7 @@ use structured_elements::{address::OsmAddress, contact::OsmContactInfo};
 
 use crate::storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 
-use super::{topn::TopNHeap, varint::to_varint};
+use super::{topn::TopNHeap, varint::ToVarint};
 
 pub type LiteralId = u64;
 
@@ -96,6 +96,7 @@ fn insert_type_irrelevant<T: SerializeMinimal>(
     return Ok((i as u64) << 1);
 }
 
+#[derive(Clone)]
 pub enum Literal {
     KeyVar(LiteralKey, LiteralValue),
     WellKnownKeyVar(WellKnownKeyVar),
@@ -141,12 +142,12 @@ impl SerializeMinimal for Literal {
                         write_to.write_all(&[head])?;
 
                         let id = pool.1.insert(&s.clone().into())?;
-                        write_to.write_all(&to_varint(id))?;
+                        id.write_varint(write_to)?;
                     }
                 }
 
                 let id = pool.1.insert(v)?;
-                return write_to.write_all(&to_varint(id));
+                return id.write_varint(write_to);
             }
             Literal::WellKnownKeyVar(wk) => {
                 head |= 0b1 << 7;
@@ -179,7 +180,7 @@ impl SerializeMinimal for Literal {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum LiteralKey {
     WellKnownKey(WellKnownKey),
     Str(String),
@@ -191,6 +192,7 @@ impl<R: AsRef<str>> From<R> for LiteralKey {
     }
 }
 
+#[derive(Clone)]
 pub enum WellKnownKeyVar {
     Address(OsmAddress),
     MapFeatureType,

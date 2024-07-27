@@ -1,10 +1,14 @@
 use std::{fs::File, path::PathBuf, rc::Rc};
 
+use sorted_vec::SortedVec;
+
 use super::{
-    bbox::{BoundingBox, DeltaBoundingBox, LongLatSplitDirection},
+    bbox::{BoundingBox, LongLatSplitDirection},
+    compare_by::OrderByBBox,
     NODE_SATURATION_POINT,
 };
 use crate::storage::{
+    self,
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
     Storage,
 };
@@ -15,43 +19,16 @@ pub struct LongLatTree<T>
 where
     T: 'static
         + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
+        + Clone,
     for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
 {
     pub(super) root_tree_info: RootTreeInfo,
     pub(super) bbox: BoundingBox<i32>,
     pub(super) direction: LongLatSplitDirection,
-    pub(super) children: Vec<(DeltaBoundingBox<u32>, T)>,
+    pub(super) children: SortedVec<OrderByBBox<T>>,
     pub(super) left_right_split: Option<(StoredTree<T>, StoredTree<T>)>,
     pub(super) id: u64,
-}
-
-impl<T> crate::storage::StorageReachable for LongLatTree<T>
-where
-    T: 'static
-        + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
-    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
-{
-    fn flush_children<'a>(
-        &'a self,
-        data: <T as SerializeMinimal>::ExternalData<'a>,
-    ) -> Result<(), std::io::Error> {
-        match &self.left_right_split {
-            Some((l, r)) => {
-                match l.flush(data) {
-                    Some(Err(e)) => return Err(e),
-                    Some(Ok(())) | None => {}
-                }
-                match r.flush(data) {
-                    Some(Err(e)) => return Err(e),
-                    Some(Ok(())) | None => {}
-                }
-                Ok(())
-            }
-            None => Ok(()),
-        }
-    }
 }
 
 pub(super) type RootTreeInfo = Rc<(PathBuf, File)>;
@@ -60,22 +37,21 @@ pub struct LongLatTreeItems<'a, T>
 where
     T: 'static
         + SerializeMinimal
-        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>,
+        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>
+        + Clone,
     for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
 {
     query_bbox: &'a BoundingBox<i32>,
     parent_tree_stack: Vec<&'a StoredTree<T>>,
-    current_tree_children: (
-        BoundingBox<i32>,
-        std::slice::Iter<'a, (DeltaBoundingBox<u32>, T)>,
-    ),
+    current_tree_children: (BoundingBox<i32>, std::slice::Iter<'a, OrderByBBox<T>>),
 }
 
 impl<'a, T> Iterator for LongLatTreeItems<'a, T>
 where
     T: 'static
         + SerializeMinimal
-        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>,
+        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>
+        + Clone,
     for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
 {
     type Item = &'a T;
@@ -105,7 +81,8 @@ impl<T> LongLatTree<T>
 where
     T: 'static
         + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>,
+        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
+        + Clone,
     for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
 {
     pub fn new(bbox: BoundingBox<i32>, root_tree_info: RootTreeInfo) -> Self {
@@ -113,7 +90,7 @@ where
             root_tree_info,
             bbox,
             direction: LongLatSplitDirection::default(),
-            children: Vec::new(),
+            children: SortedVec::new(),
             left_right_split: None,
             id: 1,
         }
@@ -149,28 +126,33 @@ where
         }
     }
 
-    pub fn insert(&mut self, bbox: BoundingBox<i32>, item: T) {
-        match &mut self.left_right_split {
-            Some((left, right)) => {
-                if left.deref().bbox.contains(&bbox) {
-                    left.modify(|tree| tree.insert(bbox, item));
-                    return;
-                } else if right.deref().bbox.contains(&bbox) {
-                    right.modify(|tree| tree.insert(bbox, item));
-                    return;
-                } else {
-                    self.children.push((bbox.interior_delta(&self.bbox), item));
+    pub fn insert(&mut self, bbox: &BoundingBox<i32>, item: T) {
+        let mut tree = self;
+
+        let (leaf, leaf_bbox) = loop {
+            match tree.left_right_split {
+                Some((ref mut left, ref mut right)) => {
+                    if left.deref().bbox.contains(&bbox) {
+                        tree = left.ref_mut();
+                        continue;
+                    } else if right.deref().bbox.contains(&bbox) {
+                        tree = right.ref_mut();
+                        continue;
+                    }
+                }
+                None => {
+                    if tree.children.len() >= NODE_SATURATION_POINT {
+                        tree.split_left_right();
+                        continue;
+                    }
                 }
             }
-            None => {
-                if self.children.len() < NODE_SATURATION_POINT {
-                    self.children.push((bbox.interior_delta(&self.bbox), item));
-                } else {
-                    self.split_left_right();
-                    return self.insert(bbox, item);
-                }
-            }
-        }
+
+            break (&mut tree.children, &mut tree.bbox);
+        };
+
+        let interior_delta_bbox = bbox.interior_delta(&leaf_bbox);
+        leaf.push(OrderByBBox(interior_delta_bbox, item));
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
@@ -194,23 +176,27 @@ where
 
         let (left_bb, right_bb) = self.bbox.split_on_axis(&self.direction);
 
-        let mut left_children = Vec::new();
-        let mut both_children = Vec::new();
-        let mut right_children = Vec::new();
+        let mut left_children = SortedVec::new();
+        let mut both_children = SortedVec::new();
+        let mut right_children = SortedVec::new();
 
-        while let Some((bbox, item)) = self.children.pop() {
+        for OrderByBBox(bbox, item) in self.children.drain(..) {
             let bb_abs = bbox.absolute(&self.bbox);
 
             if left_bb.contains(&bb_abs) {
-                left_children.push((bb_abs.interior_delta(&left_bb), item));
+                left_children.push(OrderByBBox(bb_abs.interior_delta(&left_bb), item));
             } else if right_bb.contains(&bb_abs) {
-                right_children.push((bb_abs.interior_delta(&right_bb), item));
+                right_children.push(OrderByBBox(bb_abs.interior_delta(&right_bb), item));
             } else {
-                both_children.push((bbox, item));
+                both_children.push(OrderByBBox(bbox, item));
             }
         }
 
-        self.children.extend(both_children);
+        debug_assert!(self.children.is_empty());
+
+        for c in both_children.into_vec() {
+            self.children.push(c);
+        }
 
         let (left_path, left_id) = self.make_branch_id(0);
         let (right_path, right_id) = self.make_branch_id(1);

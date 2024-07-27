@@ -1,4 +1,4 @@
-use crate::compressor::varint::to_varint;
+use crate::compressor::varint::ToVarint;
 
 use super::{literal_value::LiteralValue, LiteralPool};
 
@@ -19,7 +19,7 @@ pub(self) fn insert_with_byte(
         Some(t) => {
             *byte |= 1 << byte_index;
             let id = pool.insert(t)?;
-            extra_storage.extend(to_varint(id));
+            id.write_varint(extra_storage)?;
             Ok(())
         }
         None => Ok(())

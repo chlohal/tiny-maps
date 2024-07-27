@@ -2,15 +2,16 @@ use std::io::Read;
 
 use osmpbfreader::Tags;
 
+use crate::compressor::varint::ToVarint;
 use crate::storage::serialize_min::DeserializeFromMinimal;
 use crate::storage::serialize_min::SerializeMinimal;
-use crate::compressor::varint::{from_varint, to_varint};
+use crate::compressor::varint::{from_varint};
 use crate::storage::serialize_min::ReadExtReadOne;
 
 use super::packed_strings::StringSerialVariation;
 use super::LiteralPool;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LiteralValue {
     BoolYes,
     BoolNo,
@@ -138,11 +139,11 @@ impl SerializeMinimal for LiteralValue {
             LiteralValue::BoolNo => 0b0001_0000u8,
             LiteralValue::Blank => 0b0010_0000u8,
             LiteralValue::UInt(num) => {
-                buf.extend(to_varint(*num));
+                num.write_varint(&mut buf)?;
                 0b0011_0000u8
             }
             LiteralValue::IInt(num) => {
-                buf.extend(to_varint(*num));
+                num.write_varint(&mut buf)?;
                 0b0100_0000u8
             }
             LiteralValue::TinyUNumber(num) => 0b0101_0000u8 | *num,

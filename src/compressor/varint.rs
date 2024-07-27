@@ -2,7 +2,7 @@ use std::{
     io::Write, io::Read, mem, ops::{BitOrAssign, ShlAssign}
 };
 
-use crate::storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
+use crate::storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal, ReadExtReadOne};
 
 pub fn to_varint<T: ToVarint>(value: T) -> Vec<u8> {
     value.to_varint()
@@ -13,7 +13,12 @@ pub fn from_varint<T: FromVarint>(bytes: &mut impl Read) -> std::io::Result<T> {
 }
 
 pub trait ToVarint {
-    fn to_varint(&self) -> Vec<u8>;
+    fn write_varint(&self, to: &mut impl std::io::Write) -> std::io::Result<()>;
+    fn to_varint(&self) -> Vec<u8> {
+        let mut v = Vec::new();
+        self.write_varint(&mut v).unwrap();
+        v
+    }
 }
 
 pub trait FromVarint: Sized {
@@ -43,53 +48,50 @@ macro_rules! impl_to_varint {
     ( $($typ:tt),* ) => {
         $(
         impl ToVarint for $typ {
-            fn to_varint(&self) -> Vec<u8> {
+            fn write_varint(&self, to: &mut impl std::io::Write) -> std::io::Result<()> {
                 let mut value = *self;
 
-                let flag_done = 0b1_000_0000;
+                let flag_more = 0b1_000_0000;
+                let bits_per_byte = 7;
 
-                let mut slice = Vec::with_capacity(mem::size_of::<$typ>());
+                //round the shift down to a multiple of bits_per_byte
+                let mut shift = ($typ::BITS - self.leading_zeros());
+                shift = shift - (shift % bits_per_byte);
 
-                let mask = 0b0111_1111;
-                let shift = 7u8;
+                let mut mask: $typ = 0b_111_1111 << shift;
 
                 loop {
-                    let byte = self & mask;
-                    value >>= shift;
-
-                    slice.push(byte as u8);
+                    let byte = (self & mask) >> shift;
+                    value >>= bits_per_byte;
+                    mask >>= bits_per_byte;
+                    shift = shift.saturating_sub(bits_per_byte);
 
                     if value == 0 {
+                        to.write_all(&[(byte as u8)])?;
                         break;
+                    } else {
+                        to.write_all(&[(byte as u8) | flag_more])?;
                     }
                 }
 
-                //put MSB first
-                slice.reverse();
-                slice.shrink_to_fit();
-
-                //stick the Done flag on the last byte
-                *slice.last_mut().unwrap() |= flag_done;
-
-                slice
+                Ok(())
             }
         }
         impl FromVarint for $typ {
             fn from_varint(bytes: &mut impl Read) -> std::io::Result<Self> {
-                let flag_done = 0b1_000_0000;
+                let flag_more = 0b1_000_0000;
             
-                let mask = 0b1111_111u8;
                 let shift = 7u8;
             
                 let mut value = 0;
+            
+                for byte in bytes.reading_iterator() {
+                    let byte = byte?;
 
-                let byte = 0b0u8;
-            
-                while let Ok(_) = bytes.read_exact(&mut [byte]) {
                     //apply byte, without value of flag
-                    value |= (byte ^ flag_done) as $typ;
+                    value |= (byte & !flag_more) as $typ;
             
-                    if (flag_done & byte) != 0 {
+                    if (flag_more & byte) == 0 {
                         return Ok(value);
                     } else {
                         value <<= shift;
@@ -124,8 +126,8 @@ macro_rules! impl_to_be_bytes_signed_zigzag {
             }
         }
         impl ToVarint for $typ {
-            fn to_varint(&self) -> Vec<u8> {
-                Zigzag::zigzag(self).to_varint()
+            fn write_varint(&self, to: &mut impl std::io::Write) -> std::io::Result<()> {
+                Zigzag::zigzag(self).write_varint(to)
             }
         }
         impl FromVarint for $typ {
@@ -154,5 +156,13 @@ mod tests {
     fn decode() {
         let result: u8 = from_varint(&mut vec![0b1_000_0000].as_slice()).unwrap();
         assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn roundtrip() {
+        let value = 587321u64;
+
+        let mut to = &to_varint(value)[..];
+        assert_eq!(from_varint::<u64>(&mut to).unwrap(), value);
     }
 }

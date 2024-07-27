@@ -1,5 +1,5 @@
 pub mod bbox;
-pub mod compare_by;
+mod compare_by;
 mod tree;
 
 mod tree_serde;

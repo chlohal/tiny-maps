@@ -1,9 +1,15 @@
-use std::ops::{Add, Div};
+use std::{
+    fmt::Debug,
+    ops::{Add, Div},
+};
 
 use postgres::fallible_iterator::{FallibleIterator, FromFallibleIterator};
 use serde::{Deserialize, Serialize};
 
-use crate::{compressor::varint::{from_varint, to_varint, FromVarint, ToVarint}, storage::serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal}};
+use crate::{
+    compressor::varint::{from_varint, FromVarint, ToVarint},
+    storage::serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
+};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct BoundingBox<T> {
@@ -88,21 +94,25 @@ impl<T: Copy + Add<Output = T> + Div<i32, Output = T>> BoundingBox<T> {
 impl<T: ToVarint + PartialEq + Copy> SerializeMinimal for BoundingBox<T> {
     type ExternalData<'s> = ();
 
-    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        _external_data: (),
+    ) -> std::io::Result<()> {
         if self.is_point() {
             write_to.write_all(&[0])?;
 
-            write_to.write_all(&to_varint(self.x))?;
-            write_to.write_all(&to_varint(self.y))?;
-            
+            self.x.write_varint(write_to)?;
+            self.y.write_varint(write_to)?;
+
             Ok(())
         } else {
             write_to.write_all(&[1])?;
 
-            write_to.write_all(&to_varint(self.x))?;
-            write_to.write_all(&to_varint(self.y))?;
-            write_to.write_all(&to_varint(self.x_end))?;
-            write_to.write_all(&to_varint(self.y_end))?;
+            self.x.write_varint(write_to)?;
+            self.y.write_varint(write_to)?;
+            self.x_end.write_varint(write_to)?;
+            self.y_end.write_varint(write_to)?;
 
             Ok(())
         }
@@ -112,9 +122,10 @@ impl<T: ToVarint + PartialEq + Copy> SerializeMinimal for BoundingBox<T> {
 impl<T: FromVarint + Copy> DeserializeFromMinimal for BoundingBox<T> {
     type ExternalData<'a> = ();
 
-    
-
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: ()) -> Result<Self, std::io::Error> {
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        _external_data: (),
+    ) -> Result<Self, std::io::Error> {
         let flag = from.read_one()?;
 
         if flag == 1 {
@@ -176,7 +187,7 @@ impl BoundingBox<i32> {
     pub fn interior_delta(&self, parent: &Self) -> DeltaBoundingBox<u32> {
         let x = self.x.abs_diff(parent.x);
         let y = self.y.abs_diff(parent.y);
-        
+
         let width = self.x.abs_diff(self.x_end);
         let height = self.y.abs_diff(self.y_end);
 
@@ -188,11 +199,12 @@ impl BoundingBox<i32> {
         }
     }
 
+    #[inline]
     pub fn contains(&self, other: &BoundingBox<i32>) -> bool {
-        return self.y <= other.y
-            && self.x <= other.x
-            && self.x_end >= other.x_end
-            && self.y_end >= other.y_end;
+        (self.y <= other.y)
+            & (self.x <= other.x)
+            & (self.x_end >= other.x_end)
+            & (self.y_end >= other.y_end)
     }
 
     pub fn empty() -> BoundingBox<i32> {
@@ -231,33 +243,55 @@ impl BoundingBox<i32> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DeltaBoundingBox<T> {
+#[derive(Debug, Clone)]
+pub struct DeltaBoundingBox<T: lindel::IdealKey<2>>
+where
+    <T as lindel::IdealKey<2>>::Key: Debug + Clone,
+{
     x: T,
     y: T,
     width: T,
-    height: T
-}
-impl<T> DeltaBoundingBox<T> {
-    pub const fn x(&self) -> &T {
-        &self.x
-    }
-
-    pub const fn y(&self) -> &T {
-        &self.y
-    }
+    height: T,
 }
 
-
-impl<T: Default> DeltaBoundingBox<T> {
+impl<T: lindel::IdealKey<2> + Default> DeltaBoundingBox<T>
+where
+    <T as lindel::IdealKey<2>>::Key: Debug + Clone + Default,
+{
     pub fn zero() -> DeltaBoundingBox<T> {
-        Self { x: T::default(), y: T::default(), width: T::default(), height: T::default() }
+        Self {
+            x: T::default(),
+            y: T::default(),
+            width: T::default(),
+            height: T::default(),
+        }
     }
 }
 
 impl DeltaBoundingBox<u32> {
+    pub fn morton_origin_point(&self) -> u64 {
+        lindel::hilbert_encode([self.x, self.y])
+    }
+
+    pub fn delta_friendly_offset(&self, initial: &Self) -> DeltaFriendlyU32Offset {
+        DeltaFriendlyU32Offset(
+            self.morton_origin_point() - initial.morton_origin_point(),
+            self.width,
+            self.height,
+        )
+    }
+
+    pub fn from_delta_friendly_offset(from: &DeltaFriendlyU32Offset, initial: &DeltaFriendlyU32Offset) -> Self {
+        let [x, y] = lindel::hilbert_decode(from.0 + initial.0);
+        Self {
+            x, y,
+            width: from.1,
+            height: from.2,
+        }
+    }
+
     pub fn absolute(&self, parent: &BoundingBox<i32>) -> BoundingBox<i32> {
-        let x = parent.y.checked_add_unsigned(self.y).unwrap();
+        let x = parent.y.checked_add_unsigned(self.x).unwrap();
         let y = parent.y.checked_add_unsigned(self.y).unwrap();
         BoundingBox {
             x,
@@ -268,84 +302,65 @@ impl DeltaBoundingBox<u32> {
     }
 }
 
-impl<T: 'static + SerializeMinimal<ExternalData<'static> = ()> + PartialEq + Default> SerializeMinimal for DeltaBoundingBox<T> {
+pub struct DeltaFriendlyU32Offset(u64, u32, u32);
+
+impl DeltaFriendlyU32Offset {
+    pub fn zero() -> Self {
+        Self(0,0,0)
+    }
+}
+
+impl SerializeMinimal for DeltaFriendlyU32Offset {
     type ExternalData<'s> = ();
-    
 
-    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
-        let zero = Default::default();
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        _external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        let DeltaFriendlyU32Offset(mortoned, width, height) = self;
+        let is_not_point = *width != 0 || *height != 0;
 
-
-        let header: u8 = ((self.width == zero) as u8) << 7 |
-        ((self.height == zero) as u8) << 6 |
-        ((self.x == zero) as u8) << 5 |
-        ((self.y == zero) as u8) << 4;
-
-        write_to.write_all(&[header])?;
-
-        
-
-        if self.width != zero {
-            self.width.minimally_serialize(write_to, ())?;
+        if mortoned & (1 << 63) != 0 {
+            panic!("Huge mortoned coordinate; no extra bit to encode point-ness");
         }
 
-        if self.height != zero {
-            self.height.minimally_serialize(write_to, external_data)?;
-        }
+        let header = (mortoned << 1) | (is_not_point as u64);
 
-        if self.x != zero {
-            self.x.minimally_serialize(write_to, external_data)?;
-        }
+        header.write_varint(write_to)?;
 
-        if self.y != zero {
-            self.y.minimally_serialize(write_to, external_data)?;
+        if is_not_point {
+            width.minimally_serialize(write_to, ())?;
+            height.minimally_serialize(write_to, ())?;
         }
 
         Ok(())
-
-
     }
-    
 }
 
-impl<T: DeserializeFromMinimal<ExternalData<'static> = ()> + Copy + Default> DeserializeFromMinimal for DeltaBoundingBox<T> {
+impl DeserializeFromMinimal for DeltaFriendlyU32Offset {
     type ExternalData<'a> = ();
 
-    
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        let header = u64::deserialize_minimal(from, external_data)?;
 
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
-        let header = from.read_one()?;
+        let xy = header >> 1;
 
-        let width = if header & (1 << 7) != 0 {
-            T::deserialize_minimal(from, external_data)?
+        let is_not_point = (header & 1) != 0;
+
+        let (width, height) = if is_not_point {
+            (
+                u32::deserialize_minimal(from, ())?,
+                u32::deserialize_minimal(from, ())?,
+            )
         } else {
-            T::default()
+            (0, 0)
         };
 
-        let height = if header & (1 << 6) != 0 {
-            T::deserialize_minimal(from, external_data)?
-        } else {
-            T::default()
-        };
-
-        let x = if header & (1 << 5) != 0 {
-            T::deserialize_minimal(from, external_data)?
-        } else {
-            T::default()
-        };
-
-        let y = if header & (1 << 4) != 0 {
-            T::deserialize_minimal(from, external_data)?
-        } else {
-            T::default()
-        };
-
-        Ok(Self {
-            x,
-            y,
-            width,
-            height,
-        })
+        Ok(Self( xy, width, height ))
     }
 }
 
@@ -378,8 +393,18 @@ mod test {
 
     #[test]
     pub fn contains() {
-        let big = BoundingBox { x: 0, y: -900000000, x_end: 1800000000, y_end: 900000000 };
-        let small = BoundingBox { x: 323422752, y: -1, x_end: 323422752, y_end: -1 };
+        let big = BoundingBox {
+            x: 0,
+            y: -900000000,
+            x_end: 1800000000,
+            y_end: 900000000,
+        };
+        let small = BoundingBox {
+            x: 323422752,
+            y: -1,
+            x_end: 323422752,
+            y_end: -1,
+        };
         assert!(big.contains(&small));
     }
 }

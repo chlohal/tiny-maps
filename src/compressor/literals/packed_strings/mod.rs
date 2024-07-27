@@ -1,7 +1,7 @@
 use crate::{
     compressor::{
         is_final::IterIsFinal,
-        varint::{from_varint, to_varint},
+        varint::{from_varint, ToVarint},
     },
     storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal},
 };
@@ -64,7 +64,7 @@ impl SerializeMinimal for String {
 
         extra_info_nibble.0 = StringSerialVariation::Unicode;
 
-        write_to.write_all(&to_varint(value.as_bytes().len()))?;
+        value.as_bytes().len().write_varint(write_to)?;
         write_to.write_all(value.as_bytes())
     }
 }

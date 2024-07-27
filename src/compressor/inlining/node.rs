@@ -10,6 +10,7 @@ use crate::compressor::literals::{
 
 use super::{InlinedTags, TagCollection};
 
+#[derive(Clone)]
 pub struct Node {
     pub single: Option<NodeSingleInlined>,
     pub multiple: InlinedNodeTags,
@@ -24,6 +25,7 @@ impl Node {
     }
 }
 
+#[derive(Clone)]
 pub struct InlinedNodeTags {
     pub address: Option<Literal>,
     pub public_transit: Option<Literal>,
@@ -160,5 +162,5 @@ pub fn inline_node_tags(mut tags: Tags) -> InlinedTags<Node> {
         other: tags.drain_to_literal_list(),
     };
 
-    todo!() //todo: implement ability to use multiple & single at same time
+    //todo: implement ability to use multiple & single at same time
 }

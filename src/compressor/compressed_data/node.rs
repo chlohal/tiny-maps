@@ -7,7 +7,7 @@ use crate::{
             node::{inline_node_tags, Node, NodeSingleInlined},
             InlinedTags,
         },
-        literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::to_varint,
+        literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::ToVarint,
     },
     tree::bbox::BoundingBox,
 };
@@ -122,46 +122,46 @@ fn write_node_with_uninlined_tags<W: std::io::Write>(
         blob[0] |= non_inlined_tags.len() as u8;
     } else {
         blob[0] |= 0b1111;
-        blob.extend(to_varint(non_inlined_tags.len()));
+        non_inlined_tags.len().write_varint(&mut blob)?;
     }
 
     if let Some(address) = &multiple_inlined.address {
         let id = LiteralPool::<Literal>::insert(values, &address)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b1000_0000;
     }
 
     if let Some(public_transit) = &multiple_inlined.public_transit {
         let id = LiteralPool::<Literal>::insert(values, &public_transit)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b0100_0000;
     }
 
     if let Some(shop) = &multiple_inlined.shop {
         let id = LiteralPool::<Literal>::insert(values, &shop)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b0010_0000;
     }
 
     if let Some(name) = &multiple_inlined.name {
         let id = LiteralPool::<LiteralValue>::insert(&mut values.1, &name)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b0001_0000;
     }
 
     if let Some(contact) = &multiple_inlined.contact {
         let id = LiteralPool::<Literal>::insert(values, &contact)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b0000_0100;
     }
     if let Some(place) = &multiple_inlined.place {
         let id = LiteralPool::<LiteralValue>::insert(&mut values.1, &place)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b0000_0010;
     }
     if let Some(operator) = &multiple_inlined.operator {
         let id = LiteralPool::<LiteralValue>::insert(&mut values.1, &operator)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
         tags_byte |= 0b0000_0001;
     }
 
@@ -170,7 +170,7 @@ fn write_node_with_uninlined_tags<W: std::io::Write>(
 
     for taglit in non_inlined_tags {
         let id = LiteralPool::<Literal>::insert(values, &taglit)?;
-        blob.extend(to_varint(id));
+        id.write_varint(&mut blob)?;
     }
 
     write_to.write_all(&blob)

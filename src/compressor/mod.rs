@@ -14,8 +14,6 @@ use inlining::{
 use literals::{literal_value::LiteralValue, Literal};
 use osmpbfreader::{Node, OsmObj, Relation, Tags, Way};
 
-use varint::{from_varint, to_varint};
-
 use crate::{
     storage::{serialize_min::{DeserializeFromMinimal, SerializeMinimal}, Storage},
     tree::{
@@ -54,7 +52,7 @@ impl Compressor {
 
         let mut geography = make_geography(&state_path);
 
-        geography.modify(|tree| tree.expand_to_depth(5));
+        geography.ref_mut().expand_to_depth(5);
 
         Compressor {
             values: (
@@ -67,10 +65,11 @@ impl Compressor {
     }
     pub fn write_element(&mut self, element: OsmObj) {
         let data: CompressedOsmData = element.into();
-        let bbox = data.bbox().clone();
-        let data = UncompressedOsmData::new(data, &mut self.values);
+        let bbox = data.bbox();
 
-        self.geography.modify(|tree| tree.insert(bbox, data))
+        let data = UncompressedOsmData::new(&data, &mut self.values);
+
+        self.geography.ref_mut().insert(bbox, data)
     }
 
     pub fn write_way(&mut self, way: &Way) {

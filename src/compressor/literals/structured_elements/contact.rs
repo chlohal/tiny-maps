@@ -6,6 +6,7 @@ use super::insert_with_byte;
 
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 14;
 
+#[derive(Clone)]
 pub struct OsmContactInfo {
     phone: Option<LiteralValue>,
     website: Option<LiteralValue>,
@@ -45,11 +46,11 @@ impl OsmContactInfo {
     } 
 
     pub fn make_from_tags(tags: &mut Tags, prefix: &str) -> Self {
-        let mut pstr = prefix.to_string();
-        pstr.push(':');
+
+        debug_assert!(prefix == "" || prefix.ends_with(':'));
 
         //multiply the max length by 4 to get the absolute worst-case scenario for byte length in utf8
-        let mut tag_building = StrAsciiPrefixView::new(pstr, MAX_TAG_LENGTH_PLUS_TWO * 4);
+        let mut tag_building = StrAsciiPrefixView::new(prefix, MAX_TAG_LENGTH_PLUS_TWO * 4);
 
         let phone = LiteralValue::from_tag_and_remove(tags, &tag_building.with("phone"));
         let website = LiteralValue::from_tag_and_remove(tags, &tag_building.with("website"));
@@ -60,7 +61,7 @@ impl OsmContactInfo {
         let vk = LiteralValue::from_tag_and_remove(tags, &tag_building.with("vk"));
         let twitter = LiteralValue::from_tag_and_remove(tags, &tag_building.with("twitter"));
 
-        let prefix = if prefix != "contact" {
+        let prefix = if prefix != "contact:" {
             Some(prefix.to_string().into())
         } else {
             None

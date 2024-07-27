@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use osmpbfreader::Tags;
 
-use crate::{compressor::{literals::{string_prefix_view::StrAsciiPrefixView, LiteralKey, WellKnownKeyVar}, varint::to_varint}, storage::serialize_min::SerializeMinimal};
+use crate::{compressor::{literals::{string_prefix_view::StrAsciiPrefixView, LiteralKey, WellKnownKeyVar}, varint::ToVarint}, storage::serialize_min::SerializeMinimal};
 
 use super::{super::{
     literal_value::LiteralValue, Literal, LiteralPool,
@@ -10,6 +10,7 @@ use super::{super::{
 
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 20;
 
+#[derive(Clone)]
 pub struct OsmAddress {
     number: Option<LiteralValue>,
     street: Option<LiteralValue>,
@@ -68,18 +69,16 @@ impl OsmAddress {
     }
 
     pub fn make_from_tags(tags: &mut Tags, prefix: &str) -> Self {
-        let mut pstr = prefix.to_string();
-        pstr.push(':');
 
         //multiply the max length by 4 to get the absolute worst-case scenario for byte length in utf8
-        let mut tag_building = StrAsciiPrefixView::new(pstr, MAX_TAG_LENGTH_PLUS_TWO * 4);
+        let mut tag_building = StrAsciiPrefixView::new(prefix, MAX_TAG_LENGTH_PLUS_TWO * 4);
 
-        let number = LiteralValue::from_tag_and_remove(tags, &tag_building.with("housenumber"));
-        let street = LiteralValue::from_tag_and_remove(tags, &tag_building.with("street"));
-        let city = LiteralValue::from_tag_and_remove(tags, &tag_building.with("city"));
-        let state = LiteralValue::from_tag_and_remove(tags, &tag_building.with("state"));
+        let number = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":housenumber"));
+        let street = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":street"));
+        let city = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":city"));
+        let state = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":state"));
 
-        let province = LiteralValue::from_tag_and_remove(tags, &tag_building.with("province"));
+        let province = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":province"));
 
         if number.is_none()
             && street.is_none()
@@ -131,7 +130,7 @@ impl SerializeMinimal for OsmAddress {
                     first_byte |= (num - 1) as u8;
 
                     let street_id = pool.1.insert(self.street.as_ref().unwrap())?;
-                    extra_storage.extend(to_varint(street_id));
+                    street_id.write_varint(&mut extra_storage)?;
 
                     extra_storage[0] = first_byte;
                     return write_to.write_all(&extra_storage);
@@ -320,7 +319,7 @@ impl SerializeMinimal for OsmAddress {
 
                     let id = LiteralPool::<Literal>::insert(pool, kv)?;
 
-                    extra_storage.extend(to_varint(id));
+                    id.write_varint(&mut extra_storage)?;
                 }
             }
 
@@ -333,6 +332,7 @@ impl SerializeMinimal for OsmAddress {
     }
 }
 
+#[derive(Clone)]
 pub struct OsmAddressExtra {
     housename: Option<LiteralValue>,
     unit: Option<LiteralValue>,
@@ -371,16 +371,16 @@ impl OsmAddressExtra {
     }
 
     fn make_from_tags(tags: &mut Tags, tag_building: &mut StrAsciiPrefixView) -> Self {
-        let housename = LiteralValue::from_tag_and_remove(tags, &tag_building.with("housename"));
-        let unit = LiteralValue::from_tag_and_remove(tags, &tag_building.with("unit"));
-        let floor = LiteralValue::from_tag_and_remove(tags, &tag_building.with("floor"));
-        let postbox = LiteralValue::from_tag_and_remove(tags, &tag_building.with("postbox"));
-        let full = LiteralValue::from_tag_and_remove(tags, &tag_building.with("full"));
-        let postcode = LiteralValue::from_tag_and_remove(tags, &tag_building.with("postcode"));
+        let housename = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":housename"));
+        let unit = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":unit"));
+        let floor = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":floor"));
+        let postbox = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":postbox"));
+        let full = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":full"));
+        let postcode = LiteralValue::from_tag_and_remove(tags, &tag_building.with(":postcode"));
 
         let mut arbitrary = Vec::new();
 
-        let prefix = tag_building.with("");
+        let prefix = tag_building.with(":");
         tags.retain(|k, v| {
             if k.starts_with(prefix) {
                 let k_packed = LiteralKey::from(&k[prefix.len()..]);
@@ -419,6 +419,7 @@ impl OsmAddressExtra {
     }
 }
 
+#[derive(Clone)]
 pub struct OsmAddressEvenMoreExtra {
     hamlet: Option<LiteralValue>,
     suburb: Option<LiteralValue>,
@@ -443,16 +444,16 @@ impl OsmAddressEvenMoreExtra {
     }
     fn make_from_tags(tags: &mut Tags, tag_building: &mut StrAsciiPrefixView) -> Self {
         Self {
-            hamlet: LiteralValue::from_tag_and_remove(tags, &tag_building.with("hamlet")),
-            suburb: LiteralValue::from_tag_and_remove(tags, &tag_building.with("suburb")),
-            subdistrict: LiteralValue::from_tag_and_remove(tags, &tag_building.with("subdistrict")),
-            county: LiteralValue::from_tag_and_remove(tags, &tag_building.with("county")),
-            door: LiteralValue::from_tag_and_remove(tags, &tag_building.with("door")),
-            flats: LiteralValue::from_tag_and_remove(tags, &tag_building.with("flats")),
-            block: LiteralValue::from_tag_and_remove(tags, &tag_building.with("block")),
+            hamlet: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":hamlet")),
+            suburb: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":suburb")),
+            subdistrict: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":subdistrict")),
+            county: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":county")),
+            door: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":door")),
+            flats: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":flats")),
+            block: LiteralValue::from_tag_and_remove(tags, &tag_building.with(":block")),
             block_number: LiteralValue::from_tag_and_remove(
                 tags,
-                &tag_building.with("block_number"),
+                &tag_building.with(":block_number"),
             ),
         }
     }
