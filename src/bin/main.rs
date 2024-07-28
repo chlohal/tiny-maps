@@ -6,7 +6,7 @@ use osmpbfreader::blobs::result_blob_into_iter;
 use par_map::ParMap;
 
 
-const WRITE_EVERY_N_CHUNKS: usize = 8;
+const WRITE_EVERY_N_CHUNKS: usize = 1;
 
 fn main() -> Result<(), postgres::Error> {
     let filename = args_os()

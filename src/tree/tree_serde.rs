@@ -1,7 +1,6 @@
 use std::{
-    collections::{BinaryHeap, VecDeque},
+    collections::VecDeque,
     io::{Seek, Write},
-    path::PathBuf,
     rc::Rc,
 };
 
@@ -11,26 +10,27 @@ use crate::{
     compressor::varint::{from_varint, ToVarint},
     storage::{
         serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
-        Storage, StorageReachable,
+        StorageReachable,
     },
 };
 
 use super::{
-    bbox::{BoundingBox, DeltaBoundingBox, DeltaFriendlyU32Offset, LongLatSplitDirection},
     branch_id_creation,
-    compare_by::OrderByBBox,
+    compare_by::OrderByFirst,
+    tree_traits::{
+        Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue, Zero,
+    },
     LongLatTree, RootTreeInfo, StoredTree,
 };
 
-impl<T> SerializeMinimal for LongLatTree<T>
+impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
+    for LongLatTree<DIMENSION_COUNT, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
-        + Clone,
-    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    type ExternalData<'a> = <T as SerializeMinimal>::ExternalData<'a>;
+    type ExternalData<'a> = <Value as SerializeMinimal>::ExternalData<'a>;
 
     fn minimally_serialize<'o, 's: 'o, W: std::io::Write>(
         &'o self,
@@ -63,10 +63,10 @@ where
         if !self.children.is_empty() {
             self.children.len().write_varint(write_to)?;
 
-            let mut last_bbox = DeltaBoundingBox::<u32>::zero();
+            let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
 
-            for OrderByBBox(bbox, child) in self.children.iter() {
-                let offset = bbox.delta_friendly_offset(&last_bbox);
+            for OrderByFirst(bbox, child) in self.children.iter() {
+                let offset = Key::delta_from_self(bbox, &last_bbox);
 
                 offset.minimally_serialize(write_to, ())?;
                 child.minimally_serialize(write_to, external_data)?;
@@ -79,15 +79,14 @@ where
     }
 }
 
-impl<T> DeserializeFromMinimal for LongLatTree<T>
+impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
+    for LongLatTree<DIMENSION_COUNT, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
-        + Clone,
-    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    type ExternalData<'a> = &'a (RootTreeInfo, u64, BoundingBox<i32>);
+    type ExternalData<'a> = &'a (RootTreeInfo, u64, Key::Parent);
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
@@ -105,44 +104,43 @@ where
         let has_left_right = (header_chunk >> (offset_in_byte + 1)) & 1 == 1;
         let has_children = (header_chunk >> offset_in_byte) & 1 == 1;
 
-        let direction_is_default = id.leading_zeros() % 2 == 1;
+        let axis_index = id.leading_zeros().checked_sub(1).unwrap() as usize % DIMENSION_COUNT;
 
-        let direction = if direction_is_default {
-            LongLatSplitDirection::default()
-        } else {
-            !LongLatSplitDirection::default()
-        };
+        let axis =
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::from_index(
+                axis_index,
+            );
 
         let child_len: usize = if has_children { from_varint(from)? } else { 0 };
 
         let mut children = SortedVec::with_capacity(child_len);
 
-        let mut last_bbox = DeltaFriendlyU32Offset::zero();
+        let mut last_bbox = Key::DeltaFromParent::zero();
 
         for _ in 0..child_len {
-            let delt_delt_bbox = DeltaFriendlyU32Offset::deserialize_minimal(from, ())?;
-            let delt_bbox = DeltaBoundingBox::<u32>::from_delta_friendly_offset(&delt_delt_bbox, &last_bbox);
-            let abs_bbox = delt_bbox.absolute(&bbox);
+            let delt_delt_bbox = Key::DeltaFromSelf::deserialize_minimal(from, ())?;
+            let delt_bbox = Key::apply_delta_from_self(&delt_delt_bbox, &last_bbox);
+            let abs_bbox = Key::apply_delta_from_parent(&delt_bbox, bbox);
 
-            last_bbox = delt_delt_bbox;
+            last_bbox = delt_bbox;
 
-            let item = T::deserialize_minimal(from, &abs_bbox)?;
+            let item = Value::deserialize_minimal(from, &abs_bbox)?;
 
-            children.push(OrderByBBox(delt_bbox, item));
+            children.push(OrderByFirst(delt_bbox, item));
         }
 
         let left_right_split = if has_left_right {
             let (left_path, left_id) = branch_id_creation(&root_tree_info, *id, 0);
             let (right_path, right_id) = branch_id_creation(&root_tree_info, *id, 1);
 
-            let (left_bbox, right_bbox) = bbox.split_on_axis(&direction);
+            let (left_bbox, right_bbox) = bbox.split_evenly_on_dimension(&axis);
 
             let left_data = (Rc::clone(&root_tree_info), left_id, left_bbox);
             let right_data = (Rc::clone(&root_tree_info), right_id, right_bbox);
 
             Some((
-                StoredTree::<T>::open(left_path, left_data),
-                StoredTree::<T>::open(right_path, right_data),
+                StoredTree::<DIMENSION_COUNT, Key, Value>::open(left_path, left_data),
+                StoredTree::<DIMENSION_COUNT, Key, Value>::open(right_path, right_data),
             ))
         } else {
             None
@@ -151,7 +149,7 @@ where
         Ok(Self {
             root_tree_info: Rc::clone(&external_data.0),
             bbox: bbox.clone(),
-            direction,
+            direction: axis,
             children,
             left_right_split,
             id: external_data.1,
@@ -159,18 +157,20 @@ where
     }
 }
 
-impl<T> StorageReachable<(RootTreeInfo, u64, BoundingBox<i32>)> for LongLatTree<T>
+impl<const DIMENSION_COUNT: usize, Key, Value> StorageReachable<(RootTreeInfo, u64, Key::Parent)>
+    for LongLatTree<DIMENSION_COUNT, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
-        + Clone,
-    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    fn flush_children<'a>(&'a mut self, serialize_data: <Self as SerializeMinimal>::ExternalData<'a>) -> std::io::Result<()> {
+    fn flush_children<'a>(
+        &'a mut self,
+        serialize_data: <Self as SerializeMinimal>::ExternalData<'a>,
+    ) -> std::io::Result<()> {
         let mut stack = VecDeque::new();
 
-        if let Some((l,r)) = &mut self.left_right_split {
+        if let Some((l, r)) = &mut self.left_right_split {
             stack.push_back(l);
             stack.push_back(r);
         }
@@ -180,7 +180,7 @@ where
                 result?;
             }
 
-            if let Some((l,r)) = &mut item.ref_mut().left_right_split {
+            if let Some((l, r)) = &mut item.ref_mut().left_right_split {
                 if l.is_dirty() {
                     stack.push_back(l);
                 }

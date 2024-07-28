@@ -3,65 +3,71 @@ use std::{fs::File, path::PathBuf, rc::Rc};
 use sorted_vec::SortedVec;
 
 use super::{
-    bbox::{BoundingBox, LongLatSplitDirection},
-    compare_by::OrderByBBox,
-    NODE_SATURATION_POINT,
+    compare_by::OrderByFirst, point_range::DisregardWhenDeserializing, tree_traits::{MultidimensionalKey, MultidimensionalParent, MultidimensionalValue}, NODE_SATURATION_POINT
 };
-use crate::storage::{
-    self,
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
-    Storage,
+use crate::{
+    storage::{
+        serialize_min::SerializeMinimal,
+        Storage,
+    },
+    tree::tree_traits::Dimension,
 };
 
-pub type StoredTree<T> = Storage<(RootTreeInfo, u64, BoundingBox<i32>), LongLatTree<T>>;
+pub type StoredPointTree<const D: usize, K, T> = Storage<(RootTreeInfo, u64, <K as MultidimensionalKey<D>>::Parent), LongLatTree<D, K, DisregardWhenDeserializing<K, T>>>;
 
-pub struct LongLatTree<T>
+pub type StoredTree<const D: usize, K, T> =
+    Storage<(RootTreeInfo, u64, <K as MultidimensionalKey<D>>::Parent), LongLatTree<D, K, T>>;
+
+pub struct LongLatTree<const DIMENSION_COUNT: usize, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
-        + Clone,
-    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
     pub(super) root_tree_info: RootTreeInfo,
-    pub(super) bbox: BoundingBox<i32>,
-    pub(super) direction: LongLatSplitDirection,
-    pub(super) children: SortedVec<OrderByBBox<T>>,
-    pub(super) left_right_split: Option<(StoredTree<T>, StoredTree<T>)>,
+    pub(super) bbox: Key::Parent,
+    pub(super) direction:
+        <<Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent as MultidimensionalParent<
+            DIMENSION_COUNT,
+        >>::DimensionEnum,
+    pub(super) children: SortedVec<OrderByFirst<Key::DeltaFromParent, Value>>,
+    pub(super) left_right_split: Option<(
+        StoredTree<DIMENSION_COUNT, Key, Value>,
+        StoredTree<DIMENSION_COUNT, Key, Value>,
+    )>,
     pub(super) id: u64,
 }
 
 pub(super) type RootTreeInfo = Rc<(PathBuf, File)>;
 
-pub struct LongLatTreeItems<'a, T>
+pub struct LongLatTreeItems<'a, const DIMENSION_COUNT: usize, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>
-        + Clone,
-    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    query_bbox: &'a BoundingBox<i32>,
-    parent_tree_stack: Vec<&'a StoredTree<T>>,
-    current_tree_children: (BoundingBox<i32>, std::slice::Iter<'a, OrderByBBox<T>>),
+    query_bbox: &'a Key::Parent,
+    parent_tree_stack: Vec<&'a StoredTree<DIMENSION_COUNT, Key, Value>>,
+    current_tree_children: (
+        &'a Key::Parent,
+        std::slice::Iter<'a, OrderByFirst<Key::DeltaFromParent, Value>>,
+    ),
 }
 
-impl<'a, T> Iterator for LongLatTreeItems<'a, T>
+impl<'a, const DIMENSION_COUNT: usize, Key, Value> Iterator
+    for LongLatTreeItems<'a, DIMENSION_COUNT, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'d> DeserializeFromMinimal<ExternalData<'d> = &'d BoundingBox<i32>>
-        + Clone,
-    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    type Item = &'a T;
+    type Item = &'a Value;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(next) = self.current_tree_children.1.next() {
-                if self
-                    .query_bbox
-                    .contains(&next.0.absolute(&self.current_tree_children.0))
+                if Key::apply_delta_from_parent(&next.0, &self.current_tree_children.0)
+                    .is_contained_in(&self.query_bbox)
                 {
                     return Some(&next.1);
                 }
@@ -71,25 +77,24 @@ where
                     self.parent_tree_stack.push(l);
                     self.parent_tree_stack.push(r);
                 }
-                self.current_tree_children = (tree.bbox, tree.children.iter());
+                self.current_tree_children = (&tree.bbox, tree.children.iter());
             }
         }
     }
 }
 
-impl<T> LongLatTree<T>
+impl<const DIMENSION_COUNT: usize, Key, Value> LongLatTree<DIMENSION_COUNT, Key, Value>
 where
-    T: 'static
-        + SerializeMinimal
-        + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a BoundingBox<i32>>
-        + Clone,
-    for<'s> <T as SerializeMinimal>::ExternalData<'s>: Copy,
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    pub fn new(bbox: BoundingBox<i32>, root_tree_info: RootTreeInfo) -> Self {
+    pub fn new(bbox: Key::Parent, root_tree_info: RootTreeInfo) -> Self {
         LongLatTree {
             root_tree_info,
             bbox,
-            direction: LongLatSplitDirection::default(),
+            direction:
+                <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default(),
             children: SortedVec::new(),
             left_right_split: None,
             id: 1,
@@ -97,8 +102,8 @@ where
     }
     pub fn find_items_in_box<'a>(
         &'a self,
-        query_bbox: &'a BoundingBox<i32>,
-    ) -> LongLatTreeItems<'a, T> {
+        query_bbox: &'a Key::Parent,
+    ) -> LongLatTreeItems<'a, DIMENSION_COUNT, Key, Value> {
         match &self.left_right_split {
             Some((left, right)) => {
                 let l = left.deref();
@@ -112,7 +117,7 @@ where
                     return LongLatTreeItems {
                         query_bbox,
                         parent_tree_stack: vec![left, right],
-                        current_tree_children: (self.bbox, self.children.iter()),
+                        current_tree_children: (&self.bbox, self.children.iter()),
                     };
                 }
             }
@@ -120,22 +125,22 @@ where
                 return LongLatTreeItems {
                     query_bbox,
                     parent_tree_stack: Vec::with_capacity(0),
-                    current_tree_children: (self.bbox, self.children.iter()),
+                    current_tree_children: (&self.bbox, self.children.iter()),
                 }
             }
         }
     }
 
-    pub fn insert(&mut self, bbox: &BoundingBox<i32>, item: T) {
+    pub fn insert(&mut self, k: &Key, item: Value) {
         let mut tree = self;
 
         let (leaf, leaf_bbox) = loop {
             match tree.left_right_split {
                 Some((ref mut left, ref mut right)) => {
-                    if left.deref().bbox.contains(&bbox) {
+                    if k.is_contained_in(&left.deref().bbox) {
                         tree = left.ref_mut();
                         continue;
-                    } else if right.deref().bbox.contains(&bbox) {
+                    } else if k.is_contained_in(&right.deref().bbox) {
                         tree = right.ref_mut();
                         continue;
                     }
@@ -151,8 +156,8 @@ where
             break (&mut tree.children, &mut tree.bbox);
         };
 
-        let interior_delta_bbox = bbox.interior_delta(&leaf_bbox);
-        leaf.push(OrderByBBox(interior_delta_bbox, item));
+        let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
+        leaf.push(OrderByFirst(interior_delta_bbox, item));
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
@@ -174,21 +179,21 @@ where
     fn split_left_right(&mut self) {
         debug_assert!(self.left_right_split.is_none());
 
-        let (left_bb, right_bb) = self.bbox.split_on_axis(&self.direction);
+        let (left_bb, right_bb) = self.bbox.split_evenly_on_dimension(&self.direction);
 
         let mut left_children = SortedVec::new();
         let mut both_children = SortedVec::new();
         let mut right_children = SortedVec::new();
 
-        for OrderByBBox(bbox, item) in self.children.drain(..) {
-            let bb_abs = bbox.absolute(&self.bbox);
+        for OrderByFirst(child_bbox, item) in self.children.drain(..) {
+            let bb_abs = Key::apply_delta_from_parent(&child_bbox, &self.bbox);
 
-            if left_bb.contains(&bb_abs) {
-                left_children.push(OrderByBBox(bb_abs.interior_delta(&left_bb), item));
-            } else if right_bb.contains(&bb_abs) {
-                right_children.push(OrderByBBox(bb_abs.interior_delta(&right_bb), item));
+            if bb_abs.is_contained_in(&left_bb) {
+                left_children.push(OrderByFirst(bb_abs.delta_from_parent(&left_bb), item));
+            } else if bb_abs.is_contained_in(&right_bb) {
+                right_children.push(OrderByFirst(bb_abs.delta_from_parent(&right_bb), item));
             } else {
-                both_children.push(OrderByBBox(bbox, item));
+                both_children.push(OrderByFirst(child_bbox, item));
             }
         }
 
@@ -206,25 +211,25 @@ where
                 left_path,
                 LongLatTree {
                     root_tree_info: Rc::clone(&self.root_tree_info),
-                    bbox: left_bb,
-                    direction: !self.direction,
+                    bbox: left_bb.clone(),
+                    direction: self.direction.next_axis(),
                     children: left_children,
                     left_right_split: None,
                     id: left_id,
                 },
-                (Rc::clone(&self.root_tree_info), left_id, right_bb),
+                (Rc::clone(&self.root_tree_info), left_id, left_bb),
             ),
             StoredTree::new(
                 right_path,
                 LongLatTree {
                     root_tree_info: Rc::clone(&self.root_tree_info),
-                    bbox: right_bb,
-                    direction: !self.direction,
+                    bbox: right_bb.clone(),
+                    direction: self.direction.next_axis(),
                     children: right_children,
                     left_right_split: None,
                     id: right_id,
                 },
-                (Rc::clone(&self.root_tree_info), right_id, left_bb),
+                (Rc::clone(&self.root_tree_info), right_id, right_bb),
             ),
         ))
     }

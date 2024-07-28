@@ -1,24 +1,24 @@
 use super::bbox::DeltaBoundingBox;
 
-pub struct OrderByBBox<T>(pub DeltaBoundingBox<u32>, pub T);
+pub struct OrderByFirst<Key, Value>(pub Key, pub Value);
 
-impl<T> PartialOrd for OrderByBBox<T> {
+impl<K: PartialOrd,V> PartialOrd for OrderByFirst<K,V> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.morton_origin_point().partial_cmp(&other.0.morton_origin_point())
+        self.0.partial_cmp(&other.0)
     }
 }
 
-impl<T> Eq for OrderByBBox<T> {}
+impl<K: Eq,V> Eq for OrderByFirst<K,V> {}
 
 
-impl<T> PartialEq for OrderByBBox<T> {
+impl<K: PartialEq,V> PartialEq for OrderByFirst<K,V> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.morton_origin_point().eq(&other.0.morton_origin_point())
+        self.0.eq(&other.0)
     }
 }
 
-impl<T> Ord for OrderByBBox<T> {
+impl<K: Ord,V> Ord for OrderByFirst<K,V> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.morton_origin_point().cmp(&other.0.morton_origin_point())
+        self.0.cmp(&other.0)
     }
 }

@@ -4,7 +4,7 @@ use crate::{
     compressor::{
         inlining::{
             self,
-            node::{inline_node_tags, Node, NodeSingleInlined},
+            node::{inline_node_tags, NodeSingleInlined},
             InlinedTags,
         },
         literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::ToVarint,

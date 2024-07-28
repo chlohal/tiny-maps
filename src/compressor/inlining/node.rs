@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-
 use osmpbfreader::Tags;
 
 use crate::compressor::literals::{
     literal_value::LiteralValue, structured_elements::{
-        address::OsmAddress, contact::OsmContactInfo, public_transit::OsmPublicTransit, shop_amenity::OsmShopAmenity
+        address::OsmAddress, contact::OsmContactInfo
     }, Literal, WellKnownKeyVar::Address
 };
 
@@ -18,10 +16,6 @@ pub struct Node {
 impl Node {
     pub fn is_single(&self) -> bool {
         self.multiple.is_none()
-    }
-
-    pub fn is_multiple(&self) -> bool {
-        self.single.is_none() && self.multiple.is_some()
     }
 }
 
@@ -38,10 +32,6 @@ pub struct InlinedNodeTags {
     pub additional: Vec<Literal>,
 }
 impl InlinedNodeTags {
-    fn is_some(&self) -> bool {
-        !self.is_none()
-    }
-
     fn is_none(&self) -> bool {
         self.additional.is_empty()
             && self.address.is_none()
@@ -96,7 +86,7 @@ pub fn inline_node_tags(mut tags: Tags) -> InlinedTags<Node> {
         if tags.has_exactly(&[("natural", "tree"), ("leaf_type", "needleleaved")]) {
             try_single = Some(NodeSingleInlined::NeedleleavedTree)
         } else if tags.has_exactly(&[("natural", "tree"), ("leaf_type", "broadleaved")]) {
-            try_single = Some(NodeSingleInlined::NeedleleavedTree)
+            try_single = Some(NodeSingleInlined::BroadleavedTree)
         }
 
         if let Some(t) = try_single {

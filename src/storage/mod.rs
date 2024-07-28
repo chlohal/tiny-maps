@@ -1,10 +1,6 @@
 use std::{
-    borrow::Borrow,
     cell::Cell,
-    fs::{remove_file, File},
     io::{self, Seek, Write},
-    ops::{Deref, DerefMut},
-    os::fd::AsFd,
     path::PathBuf,
 };
 
@@ -52,13 +48,6 @@ where
         value: T,
         deserialize_data: D,
     ) -> Self {
-        let file = File::options()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&id)
-            .unwrap();
-
         Self {
             inner: Seq::new(value),
             file: LazyFile::new(id),
@@ -72,13 +61,6 @@ where
         id: PathBuf,
         deserialize_data: D,
     ) -> Self {
-        let file = File::options()
-            .create(false)
-            .read(true)
-            .write(true)
-            .open(&id)
-            .unwrap();
-
         Self {
             inner: Seq::empty(),
             file: LazyFile::new(id),
@@ -149,6 +131,7 @@ where
         //for performance
         let mut buf = Vec::new();
 
+        eprintln!("writing!");
         value.minimally_serialize(&mut buf, serialize_data).unwrap();
 
         let e = file_clone.write_all(&buf);

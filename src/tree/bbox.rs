@@ -11,6 +11,8 @@ use crate::{
     storage::serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
 };
 
+use super::tree_traits::{Average, Dimension, MultidimensionalKey, MultidimensionalParent, Zero};
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct BoundingBox<T> {
     x: T,
@@ -62,6 +64,14 @@ impl FromIterator<(i32, i32)> for BoundingBox<i32> {
     }
 }
 
+impl FromIterator<BoundingBox<i32>> for BoundingBox<i32> {
+    fn from_iter<I: IntoIterator<Item = BoundingBox<i32>>>(iter: I) -> Self {
+        let mut iter = iter.into_iter();
+
+        iter.map(|x| [(x.x, x.y), (x.x_end, x.y_end)]).flatten().collect()
+    }
+}
+
 impl<T> BoundingBox<T> {
     pub const fn new(x: T, y: T, x_end: T, y_end: T) -> Self {
         Self { x, y, x_end, y_end }
@@ -78,16 +88,6 @@ impl<T> BoundingBox<T> {
 impl<T: PartialEq> BoundingBox<T> {
     fn is_point(&self) -> bool {
         self.x == self.x_end && self.y == self.y_end
-    }
-}
-
-fn avg<T: Add<Output = T> + Div<i32, Output = T>>(a: T, b: T) -> T {
-    a / 2 + b / 2
-}
-
-impl<T: Copy + Add<Output = T> + Div<i32, Output = T>> BoundingBox<T> {
-    pub fn center(&self) -> (T, T) {
-        return (avg(self.x, self.x_end), avg(self.y, self.y_end));
     }
 }
 
@@ -155,7 +155,7 @@ impl BoundingBox<i32> {
     pub fn split_on_axis(&self, direction: &LongLatSplitDirection) -> (Self, Self) {
         match direction {
             LongLatSplitDirection::Long => {
-                let y_split = avg(self.y, self.y_end);
+                let y_split = Average::avg(self.y, self.y_end);
                 return (
                     BoundingBox {
                         y_end: y_split,
@@ -168,7 +168,7 @@ impl BoundingBox<i32> {
                 );
             }
             LongLatSplitDirection::Lat => {
-                let x_split = avg(self.x, self.x_end);
+                let x_split = Average::avg(self.x, self.x_end);
 
                 return (
                     BoundingBox {
@@ -243,10 +243,60 @@ impl BoundingBox<i32> {
     }
 }
 
-#[derive(Debug, Clone)]
+impl MultidimensionalParent<2> for BoundingBox<i32> {
+    type DimensionEnum = LongLatSplitDirection;
+    
+    fn contains(&self, child: &Self) -> bool {
+        self.contains(child)
+    }
+    
+    fn split_evenly_on_dimension(&self, dimension: &Self::DimensionEnum) -> (Self, Self) {
+        self.split_on_axis(dimension)
+    }
+}
+
+impl MultidimensionalKey<2> for BoundingBox<i32> { 
+    type Parent = BoundingBox<i32>;
+    
+    type DeltaFromParent = DeltaBoundingBox<u32>;
+    type DeltaFromSelf = DeltaFriendlyU32Offset;
+    
+    fn is_contained_in(&self, parent: &Self::Parent) -> bool {
+        parent.contains(self)
+    }
+    
+    fn delta_from_parent(&self, parent: &Self::Parent) -> Self::DeltaFromParent {
+        self.interior_delta(parent)
+    }
+    
+    fn delta_from_self(finl: &Self::DeltaFromParent, initil: &Self::DeltaFromParent) -> Self::DeltaFromSelf {
+        finl.delta_friendly_offset(initil)
+    }
+    
+    fn apply_delta_from_parent(delta: &Self::DeltaFromParent, parent: &Self::Parent) -> Self {
+        delta.absolute(parent)
+    }
+    
+    fn apply_delta_from_self(delta: &Self::DeltaFromSelf, initial: &Self::DeltaFromParent) -> Self::DeltaFromParent {
+        DeltaBoundingBox::<u32>::from_delta_friendly_offset(delta, initial)
+    }
+}
+
+impl Zero for DeltaBoundingBox<u32> {
+    fn zero() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct DeltaBoundingBox<T: lindel::IdealKey<2>>
 where
-    <T as lindel::IdealKey<2>>::Key: Debug + Clone,
+    <T as lindel::IdealKey<2>>::Key: Debug + Clone + Copy,
 {
     x: T,
     y: T,
@@ -254,17 +304,23 @@ where
     height: T,
 }
 
-impl<T: lindel::IdealKey<2> + Default> DeltaBoundingBox<T>
-where
-    <T as lindel::IdealKey<2>>::Key: Debug + Clone + Default,
-{
-    pub fn zero() -> DeltaBoundingBox<T> {
-        Self {
-            x: T::default(),
-            y: T::default(),
-            width: T::default(),
-            height: T::default(),
-        }
+impl PartialEq for DeltaBoundingBox<u32> {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y
+    }
+}
+
+impl Eq for DeltaBoundingBox<u32> {}
+
+impl PartialOrd for DeltaBoundingBox<u32> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DeltaBoundingBox<u32> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.morton_origin_point().cmp(&other.morton_origin_point())
     }
 }
 
@@ -281,8 +337,8 @@ impl DeltaBoundingBox<u32> {
         )
     }
 
-    pub fn from_delta_friendly_offset(from: &DeltaFriendlyU32Offset, initial: &DeltaFriendlyU32Offset) -> Self {
-        let [x, y] = lindel::hilbert_decode(from.0 + initial.0);
+    pub fn from_delta_friendly_offset(from: &DeltaFriendlyU32Offset, initial: &DeltaBoundingBox<u32>) -> Self {
+        let [x, y] = lindel::hilbert_decode(from.0 + initial.morton_origin_point());
         Self {
             x, y,
             width: from.1,
@@ -304,8 +360,8 @@ impl DeltaBoundingBox<u32> {
 
 pub struct DeltaFriendlyU32Offset(u64, u32, u32);
 
-impl DeltaFriendlyU32Offset {
-    pub fn zero() -> Self {
+impl Zero for DeltaFriendlyU32Offset {
+    fn zero() -> Self {
         Self(0,0,0)
     }
 }
@@ -370,20 +426,28 @@ pub enum LongLatSplitDirection {
     Lat,
 }
 
-impl Default for LongLatSplitDirection {
-    fn default() -> Self {
-        LongLatSplitDirection::Lat
-    }
-}
-
-impl std::ops::Not for LongLatSplitDirection {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
+impl Dimension<2> for LongLatSplitDirection {
+    fn next_axis(&self) -> Self {
         match self {
             LongLatSplitDirection::Long => LongLatSplitDirection::Lat,
             LongLatSplitDirection::Lat => LongLatSplitDirection::Long,
         }
+    }
+    
+    fn from_index(index: usize) -> Self {
+        match index {
+            0 => LongLatSplitDirection::Lat,
+            1 => LongLatSplitDirection::Long,
+            _ => unreachable!()
+        }
+    }
+
+    
+}
+
+impl Default for LongLatSplitDirection {
+    fn default() -> Self {
+        LongLatSplitDirection::Lat
     }
 }
 

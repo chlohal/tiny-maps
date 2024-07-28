@@ -1,28 +1,75 @@
 use node::{osm_node_to_compressed_node, serialize_node};
-use osmpbfreader::{NodeId, OsmObj};
+use osmpbfreader::{NodeId, OsmId, OsmObj, RelationId, WayId};
+use relation::osm_relation_to_compressed_node;
+use way::osm_way_to_compressed_node;
 
-use crate::{storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal}, tree::bbox::BoundingBox};
+use crate::{storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal}, tree::{bbox::BoundingBox, point_range::{Point, PointRange, StoredBinaryTree}, StoredPointTree}};
 
 use super::{inlining::{node::Node, InlinedTags}, literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::{from_varint, ToVarint}};
 
 mod node;
+mod way;
+mod relation;
 
 
 #[derive(Clone)]
 pub enum CompressedOsmData {
     Node{ id: NodeId, tags: InlinedTags<Node>, point: BoundingBox<i32> },
-    Way{ point: BoundingBox<i32> },
-    Relation{ point: BoundingBox<i32> }
+    Way{ bbox: BoundingBox<i32>, id: WayId },
+    Relation{ bbox: BoundingBox<i32>, id: RelationId }
 }
 
 impl CompressedOsmData {
     pub fn bbox(&self) -> &BoundingBox<i32> {
         match self {
-            CompressedOsmData::Node { id, tags, point } => point,
-            CompressedOsmData::Way{ point } => point,
-            CompressedOsmData::Relation{ point } => point,
+            CompressedOsmData::Node { point, .. } => point,
+            CompressedOsmData::Way{ bbox, .. } => bbox,
+            CompressedOsmData::Relation{ bbox, .. } => bbox,
         }
     }
+
+    pub fn osm_id(&self) -> OsmId {
+        match self {
+            CompressedOsmData::Node { id, .. } => OsmId::Node(*id),
+            CompressedOsmData::Way { id, .. } => OsmId::Way(*id),
+            CompressedOsmData::Relation { id, .. } => OsmId::Relation(*id),
+        }
+    }
+
+    pub fn make_from_obj(value: OsmObj, bbox_cache: &mut StoredPointTree<1, Point<u64>, BoundingBox<i32>>) -> Self {
+        let value = match value {
+            OsmObj::Node(n) => osm_node_to_compressed_node(n),
+            OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache),
+            OsmObj::Relation(r) => osm_relation_to_compressed_node(r, bbox_cache),
+        };
+
+        insert_bbox(&value.osm_id(), value.bbox().clone(), bbox_cache);
+
+        value
+    }
+}
+
+pub(self) fn flattened_id(osm_id: &OsmId) -> u64 {
+    let mut inner = osm_id.inner_id() as u64;
+
+    if inner >= (1 << 62) {
+        panic!("Excessively big OSM id; no further bits for the enum variant")
+    }
+
+    inner |= match osm_id {
+        OsmId::Node(_) => 0 << 62,
+        OsmId::Way(_) => 1 << 62,
+        OsmId::Relation(_) => 2 << 62,
+    };
+
+    inner
+}
+
+
+fn insert_bbox(id: &OsmId, bbox: BoundingBox<i32>, bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>) {
+    let inner = flattened_id(id);
+
+    bbox_cache.ref_mut().insert(&Point(inner), bbox.into());
 }
 
 impl DeserializeFromMinimal for CompressedOsmData {
@@ -43,16 +90,6 @@ impl SerializeMinimal for CompressedOsmData {
             CompressedOsmData::Node { id, tags, point } => serialize_node(write_to, external_data, id, tags, point),
             CompressedOsmData::Way{ .. } => Ok(()), //todo
             CompressedOsmData::Relation{ .. } => Ok(()), //todo
-        }
-    }
-}
-
-impl From<OsmObj> for CompressedOsmData {
-    fn from(value: OsmObj) -> Self {
-        match value {
-            OsmObj::Node(n) => osm_node_to_compressed_node(n),
-            OsmObj::Way(_) => CompressedOsmData::Way{  },
-            OsmObj::Relation(_) => CompressedOsmData::Relation(),
         }
     }
 }
