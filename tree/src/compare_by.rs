@@ -1,8 +1,16 @@
+use std::fmt::Debug;
+
 pub struct OrderByFirst<Key, Value>(pub Key, pub Value);
 
 impl<K: PartialOrd,V> PartialOrd for OrderByFirst<K,V> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<K: Debug, V: Debug> Debug for OrderByFirst<K,V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("").field(&self.0).field(&self.1).finish()
     }
 }
 

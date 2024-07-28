@@ -48,10 +48,6 @@ fn main() {
     }
 
     compressor.flush_to_storage().unwrap();
-
-    compressor.handle_retry_queue();
-
-    compressor.flush_to_storage().unwrap();
 }
 
 #[derive(Parser, Debug)]

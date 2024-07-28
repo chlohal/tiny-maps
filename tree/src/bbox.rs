@@ -340,6 +340,7 @@ impl DeltaBoundingBox<u32> {
     }
 }
 
+#[derive(Debug)]
 pub struct DeltaFriendlyU32Offset(u64, u32, u32);
 
 impl Zero for DeltaFriendlyU32Offset {
@@ -357,17 +358,17 @@ impl SerializeMinimal for DeltaFriendlyU32Offset {
         _external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
         let DeltaFriendlyU32Offset(mortoned, width, height) = self;
-        let is_not_point = *width != 0 || *height != 0;
+        let is_point = *width == 0 && *height == 0;
 
         if mortoned & (1 << 63) != 0 {
             panic!("Huge mortoned coordinate; no extra bit to encode point-ness");
         }
 
-        let header = (mortoned << 1) | (is_not_point as u64);
+        let header = (mortoned << 1) | (is_point as u64);
 
         header.write_varint(write_to)?;
 
-        if is_not_point {
+        if !is_point {
             width.minimally_serialize(write_to, ())?;
             height.minimally_serialize(write_to, ())?;
         }
@@ -385,11 +386,11 @@ impl DeserializeFromMinimal for DeltaFriendlyU32Offset {
     ) -> Result<Self, std::io::Error> {
         let header = u64::deserialize_minimal(from, external_data)?;
 
+        let is_point = (header & 1) == 1;
+
         let xy = header >> 1;
 
-        let is_not_point = (header & 1) != 0;
-
-        let (width, height) = if is_not_point {
+        let (width, height) = if !is_point {
             (
                 u32::deserialize_minimal(from, ())?,
                 u32::deserialize_minimal(from, ())?,

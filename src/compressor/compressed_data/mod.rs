@@ -5,7 +5,7 @@ use way::osm_way_to_compressed_node;
 
 use tree::{bbox::BoundingBox, point_range::{Point, StoredBinaryTree}, StoredPointTree};
 
-use minimal_storage::{serialize_min::{DeserializeFromMinimal, SerializeMinimal, ReadExtReadOne}, varint::{from_varint, ToVarint}};
+use minimal_storage::{serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal}, varint::{from_varint, to_varint, ToVarint}};
 
 use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
 
@@ -133,7 +133,7 @@ impl SerializeMinimal for UncompressedOsmData {
     type ExternalData<'a> = ();
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, _external_data: ()) -> std::io::Result<()> {
-        self.0.len().write_varint(write_to)?;
+        (self.0.len() as usize).write_varint(write_to)?;
 
         write_to.write_all(&self.0)
     }

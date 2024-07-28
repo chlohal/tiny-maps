@@ -8,6 +8,12 @@ pub type StoredBinaryTree<K, T> = Storage<(RootTreeInfo, u64, PointRange<K>), Lo
 
 pub struct DisregardWhenDeserializing<Disregard, T> (T, PhantomData<Disregard>);
 
+impl<Disregard, T:std::fmt::Debug> std::fmt::Debug for DisregardWhenDeserializing<Disregard, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl<Disregard, T> DisregardWhenDeserializing<Disregard, T> {
     pub fn into_inner(self) -> T {
         self.0
@@ -50,9 +56,9 @@ impl<Disregard: 'static, T: SerializeMinimal> SerializeMinimal for DisregardWhen
     }   
 }
 
-pub trait OneDimensionalCoord: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint + Add<Output = Self> + Sub<Output = Self> {}
+pub trait OneDimensionalCoord: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint + Add<Output = Self> + Sub<Output = Self> + std::fmt::Debug {}
 
-impl<T: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint + Add<Output = T> + Sub<Output = T>> OneDimensionalCoord for T {}
+impl<T: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint + Add<Output = T> + Sub<Output = T> + std::fmt::Debug> OneDimensionalCoord for T {}
 
 #[derive(Copy, Clone)]
 pub struct PointRange<T: OneDimensionalCoord>(pub T, pub T);
@@ -71,7 +77,7 @@ impl<T: OneDimensionalCoord> MultidimensionalParent<1> for PointRange<T> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Point<T: OneDimensionalCoord>(pub T);
 
 impl<T: OneDimensionalCoord> MultidimensionalKey<1> for Point<T> {

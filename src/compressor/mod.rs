@@ -16,9 +16,9 @@ use tree::{
     StoredPointTree, StoredTree,
 };
 
-mod compressed_data;
-mod tag_compressing;
-mod types;
+pub mod compressed_data;
+pub mod tag_compressing;
+pub mod types;
 
 pub struct Compressor {
     values: (LiteralPool<Literal>, LiteralPool<LiteralValue>),

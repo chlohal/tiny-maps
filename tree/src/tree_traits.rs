@@ -1,4 +1,5 @@
 use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
+use std::fmt::Debug;
 
 pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>: Sized + Clone {
     type DimensionEnum: Dimension<DIMENSION_COUNT>;
@@ -12,8 +13,8 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
 {
     type Parent: MultidimensionalParent<DIMENSION_COUNT>;
 
-    type DeltaFromParent: Ord + Zero + Copy + Clone;
-    type DeltaFromSelf: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal<ExternalData<'static> = ()> + Zero;
+    type DeltaFromParent: Ord + Zero + Copy + Clone + Debug;
+    type DeltaFromSelf: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal<ExternalData<'static> = ()> + Zero + Debug;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool;
 
@@ -29,6 +30,7 @@ pub trait MultidimensionalValue<Key>:
     + SerializeMinimal
     + for<'deserialize> DeserializeFromMinimal<ExternalData<'deserialize> = &'deserialize Key>
     + Clone
+    + Debug
 {
 }
 
@@ -37,6 +39,7 @@ impl<Key, T> MultidimensionalValue<Key> for T where
         + SerializeMinimal
         + for<'deserialize> DeserializeFromMinimal<ExternalData<'deserialize> = &'deserialize Key>
         + Clone
+        + Debug
 {
 }
 

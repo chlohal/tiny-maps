@@ -112,8 +112,6 @@ where
 
         let child_len: usize = if has_children { from_varint(from)? } else { 0 };
 
-        eprintln!("deserializing tree node {id:x} in {:?}. has children? {has_children} ({child_len}); has split? {has_left_right}", root_tree_info.0);
-
         let mut children = SortedVec::with_capacity(child_len);
 
         let mut last_bbox = Key::DeltaFromParent::zero();
