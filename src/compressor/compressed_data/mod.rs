@@ -3,9 +3,13 @@ use osmpbfreader::{NodeId, OsmId, OsmObj, RelationId, WayId};
 use relation::osm_relation_to_compressed_node;
 use way::osm_way_to_compressed_node;
 
-use crate::{storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal, ReadExtReadOne}, tree::{bbox::BoundingBox, point_range::{Point, PointRange, StoredBinaryTree}, StoredPointTree}};
+use tree::{bbox::BoundingBox, point_range::{Point, StoredBinaryTree}, StoredPointTree};
 
-use super::{inlining::{node::Node, InlinedTags}, literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::{from_varint, ToVarint}};
+use minimal_storage::{serialize_min::{DeserializeFromMinimal, SerializeMinimal, ReadExtReadOne}, varint::{from_varint, ToVarint}};
+
+use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
+
+use super::tag_compressing::{node::Node, InlinedTags};
 
 mod node;
 mod way;

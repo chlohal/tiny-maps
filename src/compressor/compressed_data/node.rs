@@ -1,16 +1,16 @@
 use osmpbfreader::NodeId;
 
-use crate::{
-    compressor::{
-        inlining::{
+use crate::compressor::tag_compressing::{
             self,
             node::{inline_node_tags, NodeSingleInlined},
             InlinedTags,
-        },
-        literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::ToVarint,
-    },
-    tree::bbox::BoundingBox,
-};
+        };
+
+use minimal_storage::varint::ToVarint;
+
+use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
+
+use tree::bbox::BoundingBox;
 
 use super::CompressedOsmData;
 
@@ -26,7 +26,7 @@ pub fn serialize_node<W: std::io::Write>(
     write_to: &mut W,
     external_data: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
     id: &NodeId,
-    tags: &InlinedTags<inlining::node::Node>,
+    tags: &InlinedTags<tag_compressing::node::Node>,
     point: &BoundingBox<i32>,
 ) -> Result<(), std::io::Error> {
     if tags.other.is_empty() && tags.inline.is_single() {
@@ -74,7 +74,7 @@ fn write_node_with_uninlined_tags<W: std::io::Write>(
     write_to: &mut W,
     values: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
     point_bbox: &BoundingBox<i32>,
-    tags: &InlinedTags<inlining::node::Node>,
+    tags: &InlinedTags<tag_compressing::node::Node>,
 ) -> std::io::Result<()> {
     //header layout:
     //1: node

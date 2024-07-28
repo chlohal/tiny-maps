@@ -1,6 +1,8 @@
 use osmpbfreader::{OsmObj, Relation};
 
-use crate::{compressor::compressed_data::flattened_id, tree::{bbox::BoundingBox, point_range::{Point, StoredBinaryTree}}};
+use crate::compressor::compressed_data::flattened_id;
+
+use tree::{bbox::BoundingBox, point_range::{Point, StoredBinaryTree}};
 
 use super::CompressedOsmData;
 

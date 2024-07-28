@@ -3,32 +3,22 @@ use std::{
     fs::{create_dir_all, File},
     io::{self, BufWriter},
     path::PathBuf,
-    rc::Rc,
 };
 
 use compressed_data::{flattened_id, unflattened_id, CompressedOsmData, UncompressedOsmData};
-use literals::{literal_value::LiteralValue, Literal};
-use osmpbfreader::{OsmId, OsmObj, Relation, Way};
+use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
+use osmpbfreader::{OsmId, OsmObj};
 
-use crate::tree::{
+use tree::{
     bbox::{BoundingBox, EARTH_BBOX},
     open_tree,
     point_range::{DisregardWhenDeserializing, Point, PointRange},
-    LongLatTree, StoredPointTree, StoredTree,
-};
-
-use self::{
-    literals::LiteralPool,
-    types::{ElementType, KnownRelationTypeTag},
+    StoredPointTree, StoredTree,
 };
 
 mod compressed_data;
-mod inlining;
-mod is_final;
-mod literals;
-mod topn;
+mod tag_compressing;
 mod types;
-pub mod varint;
 
 pub struct Compressor {
     values: (LiteralPool<Literal>, LiteralPool<LiteralValue>),

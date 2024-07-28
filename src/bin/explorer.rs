@@ -1,6 +1,8 @@
 use std::env;
 
-use offline_tiny_maps::{compressor::Compressor, tree::{bbox::EARTH_BBOX, point_range::{Point, PointRange}}};
+use offline_tiny_maps::compressor::Compressor;
+
+use tree::{bbox::EARTH_BBOX, point_range::PointRange};
 
 fn main() {
     let mut compressor = Compressor::new(env::current_dir().unwrap().join("Output"));
