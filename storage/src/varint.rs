@@ -63,7 +63,7 @@ macro_rules! impl_to_varint {
                 loop {
                     let byte = (self & mask) >> shift;
                     mask >>= bits_per_byte;
-                    shift -= bits_per_byte;
+                    shift = shift.saturating_sub(bits_per_byte);
 
                     if mask == 0 {
                         to.write_all(&[(byte as u8)])?;
