@@ -16,3 +16,4 @@ rayon = "1.10.0"
 minimal_storage = { path = "./storage" }
 osm_literals = { path = "./osm_literals" }
 tree = { path = "./tree" }
+clap = { version = "4.5.11", features = ["derive"] }
