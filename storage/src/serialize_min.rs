@@ -1,6 +1,5 @@
 use std::io::{Write, Read};
 
-
 pub trait SerializeMinimal {
     type ExternalData<'s>;
 

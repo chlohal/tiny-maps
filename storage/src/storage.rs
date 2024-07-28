@@ -1,7 +1,5 @@
 use std::{
-    cell::Cell,
-    io::{self, Seek, Write},
-    path::PathBuf,
+    cell::Cell, fs::File, io::{self, Seek, Write}, path::PathBuf
 };
 
 enum Seq<T> {
@@ -9,7 +7,6 @@ enum Seq<T> {
     Safe(Box<T>),
 }
 
-use super::lazy_file::LazyFile;
 use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use Seq::*;
 
@@ -22,7 +19,8 @@ where
 {
     inner: Seq<T>,
     dirty: bool,
-    file: LazyFile,
+    file: File,
+    path: PathBuf,
     deserialize_data: D,
     jumble_collector_generation: usize,
 }
@@ -69,20 +67,22 @@ where
     pub fn new<'a>(id: PathBuf, value: T, deserialize_data: D) -> Self {
         Self {
             inner: Seq::new(value),
-            file: LazyFile::new(id),
+            file: open_file(&id),
             dirty: false,
             deserialize_data,
             jumble_collector_generation: 0,
+            path: id,
         }
     }
 
     pub fn open(id: PathBuf, deserialize_data: D) -> Self {
         Self {
             inner: Seq::empty(),
-            file: LazyFile::new(id),
+            file: open_file(&id),
             dirty: true,
             deserialize_data,
             jumble_collector_generation: 0,
+            path: id,
         }
     }
 
@@ -136,11 +136,8 @@ where
     ) -> Option<Result<(), io::Error>> {
         let value = self.inner.as_ref()?;
 
-        let mut file_clone = self.file.try_clone().unwrap();
-
-        //this whole struct is non-sync, so we can do this fearlessly
-        file_clone.rewind().unwrap();
-        file_clone.set_len(0).unwrap();
+        self.file.rewind().unwrap();
+        self.file.set_len(0).unwrap();
 
         //avoid many small allocations by serializing to a buffer first
         //this does the same thing as BufWriter, but it's easier & does the same
@@ -148,9 +145,9 @@ where
         let mut buf = Vec::new();
         value.minimally_serialize(&mut buf, serialize_data).unwrap();
 
-        let e = file_clone.write_all(&buf);
+        let e = self.file.write_all(&buf);
 
-        match file_clone.flush() {
+        match self.file.flush() {
             Ok(_) => {}
             Err(e) => return Some(Err(e)),
         }
@@ -183,7 +180,7 @@ where
         let mut file_clone = self.file.try_clone().unwrap();
 
         let val: T = T::deserialize_minimal(&mut file_clone, &self.deserialize_data)
-            .expect(&format!("file {:?} is valid", self.file.path));
+            .expect(&format!("file {:?} is valid", self.path));
 
         //assign to nothing to ignore the option
         let _ = self.inner.fill_unsafe(val);
@@ -220,6 +217,15 @@ where
 
         result
     }
+}
+
+fn open_file(path: &PathBuf) -> File {
+    File::options()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap()
 }
 
 impl<T> Seq<T> {

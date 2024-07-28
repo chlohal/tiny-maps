@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use crate::serialize_min::{DeserializeFromMinimal, SerializeMinimal, ReadExtReadOne};
+use crate::serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal};
 
 pub fn to_varint<T: ToVarint>(value: T) -> Vec<u8> {
     value.to_varint()
@@ -26,7 +26,11 @@ pub trait FromVarint: Sized {
 impl<T: ToVarint> SerializeMinimal for T {
     type ExternalData<'s> = ();
 
-    fn minimally_serialize<'a, 's: 'a, W: Write>(&'a self, write_to: &mut W, _external_data: ()) -> std::io::Result<()> {
+    fn minimally_serialize<'a, 's: 'a, W: Write>(
+        &'a self,
+        write_to: &mut W,
+        _external_data: (),
+    ) -> std::io::Result<()> {
         write_to.write_all(&self.to_varint())
     }
 }
@@ -34,37 +38,34 @@ impl<T: ToVarint> SerializeMinimal for T {
 impl<T: FromVarint> DeserializeFromMinimal for T {
     type ExternalData<'a> = ();
 
-    
-
-    fn deserialize_minimal<'a, 'd: 'a, R: Read>(from: &'a mut R, _external_data: ()) -> Result<Self, std::io::Error> {
-        Self::from_varint(from)   
+    fn deserialize_minimal<'a, 'd: 'a, R: Read>(
+        from: &'a mut R,
+        _external_data: (),
+    ) -> Result<Self, std::io::Error> {
+        Self::from_varint(from)
     }
 }
-
 
 macro_rules! impl_to_varint {
     ( $($typ:tt),* ) => {
         $(
         impl ToVarint for $typ {
             fn write_varint(&self, to: &mut impl std::io::Write) -> std::io::Result<()> {
-                let mut value = *self;
-
                 let flag_more = 0b1_000_0000;
                 let bits_per_byte = 7;
 
-                //round the shift down to a multiple of bits_per_byte
                 let mut shift = ($typ::BITS - self.leading_zeros());
-                shift = shift - (shift % bits_per_byte);
+
+                shift = (shift / bits_per_byte) * bits_per_byte;
 
                 let mut mask: $typ = 0b_111_1111 << shift;
 
                 loop {
                     let byte = (self & mask) >> shift;
-                    value >>= bits_per_byte;
                     mask >>= bits_per_byte;
-                    shift = shift.saturating_sub(bits_per_byte);
+                    shift -= bits_per_byte;
 
-                    if value == 0 {
+                    if mask == 0 {
                         to.write_all(&[(byte as u8)])?;
                         break;
                     } else {
@@ -78,24 +79,24 @@ macro_rules! impl_to_varint {
         impl FromVarint for $typ {
             fn from_varint(bytes: &mut impl Read) -> std::io::Result<Self> {
                 let flag_more = 0b1_000_0000;
-            
+
                 let shift = 7u8;
-            
+
                 let mut value = 0;
-            
+
                 for byte in bytes.reading_iterator() {
                     let byte = byte?;
 
                     //apply byte, without value of flag
                     value |= (byte & !flag_more) as $typ;
-            
+
                     if (flag_more & byte) == 0 {
                         return Ok(value);
                     } else {
                         value <<= shift;
                     }
                 }
-            
+
                 return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
         }
@@ -152,15 +153,103 @@ mod tests {
 
     #[test]
     fn decode() {
-        let result: u8 = from_varint(&mut vec![0b1_000_0000].as_slice()).unwrap();
+        let result: u8 = from_varint(&mut vec![0b0_000_0000].as_slice()).unwrap();
         assert_eq!(result, 0);
     }
 
     #[test]
-    fn roundtrip() {
-        let value = 587321u64;
+    fn adverse_roundtrip() {
+        let value = 128;
+
+        dbg!(to_varint(value));
 
         let mut to = &to_varint(value)[..];
         assert_eq!(from_varint::<u64>(&mut to).unwrap(), value);
+    }
+
+    #[test]
+    fn roundtrip() {
+        for value in [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32,
+            64,
+            128,
+            256,
+            142361806282472958u64,
+            6791104u64,
+            39406836u64,
+            17391677u64,
+            4796168u64,
+            148478827u64,
+            5703434u64,
+            2026716u64,
+            16612077u64,
+            21815112u64,
+            25611391u64,
+            50736485u64,
+            145740861u64,
+            15962560u64,
+            7512008u64,
+            62085279u64,
+            142461646u64,
+            8125243u64,
+            27030150u64,
+            12038051u64,
+            16506797u64,
+            1454362439u64,
+            24122395u64,
+            31770804u64,
+            3632437u64,
+            151495884u64,
+            3539001u64,
+            41138433u64,
+            209021241u64,
+            4009362u64,
+            6166955u64,
+            386708171u64,
+            63864899u64,
+            11287631u64,
+            1645593u64,
+            2592461u64,
+            22285206u64,
+            62192392u64,
+            37433174u64,
+            9810054u64,
+            5631421u64,
+            2931019u64,
+            94732639u64,
+            31287186u64,
+            102597093u64,
+            30068762u64,
+            15248553u64,
+            21227468u64,
+            5188914u64,
+            54738497u64,
+            40546372u64,
+            20332593u64,
+            252899588u64,
+            54391102u64,
+            797344187u64,
+            1603410060u64,
+            1418367550u64,
+            460978379u64,
+            107041910u64,
+            99933461u64,
+            12656623u64,
+            11977039u64,
+            354395629u64,
+            27319534u64,
+            2970785u64,
+            274430u64,
+            3499419u64,
+            109323045u64,
+        ] {
+            let mut to = &to_varint(value)[..];
+            assert_eq!(from_varint::<u64>(&mut to).unwrap(), value);
+        }
     }
 }
