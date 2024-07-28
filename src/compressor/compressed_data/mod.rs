@@ -3,7 +3,7 @@ use osmpbfreader::{NodeId, OsmId, OsmObj, RelationId, WayId};
 use relation::osm_relation_to_compressed_node;
 use way::osm_way_to_compressed_node;
 
-use crate::{storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal}, tree::{bbox::BoundingBox, point_range::{Point, PointRange, StoredBinaryTree}, StoredPointTree}};
+use crate::{storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal, ReadExtReadOne}, tree::{bbox::BoundingBox, point_range::{Point, PointRange, StoredBinaryTree}, StoredPointTree}};
 
 use super::{inlining::{node::Node, InlinedTags}, literals::{literal_value::LiteralValue, Literal, LiteralPool}, varint::{from_varint, ToVarint}};
 
@@ -12,7 +12,7 @@ mod way;
 mod relation;
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CompressedOsmData {
     Node{ id: NodeId, tags: InlinedTags<Node>, point: BoundingBox<i32> },
     Way{ bbox: BoundingBox<i32>, id: WayId },
@@ -36,33 +36,48 @@ impl CompressedOsmData {
         }
     }
 
-    pub fn make_from_obj(value: OsmObj, bbox_cache: &mut StoredPointTree<1, Point<u64>, BoundingBox<i32>>) -> Self {
+    pub fn make_from_obj(value: OsmObj, bbox_cache: &mut StoredPointTree<1, Point<u64>, BoundingBox<i32>>) -> Result<Self, OsmObj> {
         let value = match value {
             OsmObj::Node(n) => osm_node_to_compressed_node(n),
             OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache),
-            OsmObj::Relation(r) => osm_relation_to_compressed_node(r, bbox_cache),
+            OsmObj::Relation(r) => osm_relation_to_compressed_node(r, bbox_cache)?,
         };
 
         insert_bbox(&value.osm_id(), value.bbox().clone(), bbox_cache);
 
-        value
+        Ok(value)
     }
 }
 
-pub(self) fn flattened_id(osm_id: &OsmId) -> u64 {
+pub fn flattened_id(osm_id: &OsmId) -> u64 {
     let mut inner = osm_id.inner_id() as u64;
 
-    if inner >= (1 << 62) {
+    if inner.leading_zeros() < 2 {
         panic!("Excessively big OSM id; no further bits for the enum variant")
     }
 
+    inner <<= 2;
+
     inner |= match osm_id {
-        OsmId::Node(_) => 0 << 62,
-        OsmId::Way(_) => 1 << 62,
-        OsmId::Relation(_) => 2 << 62,
+        OsmId::Node(_) => 0,
+        OsmId::Way(_) => 1,
+        OsmId::Relation(_) => 2,
     };
 
     inner
+}
+
+pub fn unflattened_id(id: u64) -> OsmId {
+    let variant = id & 0b11;
+
+    let id = (id >> 2) as i64;
+
+    match variant {
+        0 => OsmId::Node(NodeId(id)),
+        1 => OsmId::Way(WayId(id)),
+        2 => OsmId::Relation(RelationId(id)),
+        _ => panic!("Bad variant!")
+    }
 }
 
 
@@ -78,6 +93,10 @@ impl DeserializeFromMinimal for CompressedOsmData {
     
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+        let header = from.read_one()?;
+
+        let is_node = (header & 0b1000_0000) != 0;
+
         todo!()
     }
 }
@@ -94,7 +113,7 @@ impl SerializeMinimal for CompressedOsmData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UncompressedOsmData(Vec<u8>);
 
 impl UncompressedOsmData {
@@ -109,7 +128,7 @@ impl UncompressedOsmData {
 impl SerializeMinimal for UncompressedOsmData {
     type ExternalData<'a> = ();
 
-    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, _external_data: ()) -> std::io::Result<()> {
         self.0.len().write_varint(write_to)?;
 
         write_to.write_all(&self.0)
@@ -119,10 +138,10 @@ impl SerializeMinimal for UncompressedOsmData {
 impl DeserializeFromMinimal for UncompressedOsmData {
     type ExternalData<'a> = &'a BoundingBox<i32>;
     
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, _external_data: &'a BoundingBox<i32>) -> Result<Self, std::io::Error> {
         let len = from_varint::<usize>(from)?;
 
-        let mut vec = Vec::with_capacity(len);
+        let mut vec = vec![0; len];
 
         from.read_exact(&mut vec[0..len])?;
 

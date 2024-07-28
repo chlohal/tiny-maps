@@ -8,7 +8,7 @@ use crate::compressor::literals::{
 
 use super::{InlinedTags, TagCollection};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Node {
     pub single: Option<NodeSingleInlined>,
     pub multiple: InlinedNodeTags,
@@ -19,7 +19,7 @@ impl Node {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InlinedNodeTags {
     pub address: Option<Literal>,
     pub public_transit: Option<Literal>,
@@ -56,7 +56,7 @@ impl InlinedNodeTags {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum NodeSingleInlined {
     Tree = 1,

@@ -57,6 +57,7 @@ where
         file.seek(std::io::SeekFrom::Start(id_based_byte_offset))
             .unwrap();
         file.write_all(&[b]).unwrap();
+        file.flush().unwrap();
 
         drop(file);
 
@@ -104,7 +105,7 @@ where
         let has_left_right = (header_chunk >> (offset_in_byte + 1)) & 1 == 1;
         let has_children = (header_chunk >> offset_in_byte) & 1 == 1;
 
-        let axis_index = id.leading_zeros().checked_sub(1).unwrap() as usize % DIMENSION_COUNT;
+        let axis_index = (u64::BITS - id.leading_zeros()).checked_sub(1).unwrap() as usize % DIMENSION_COUNT;
 
         let axis =
             <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::from_index(
@@ -112,6 +113,8 @@ where
             );
 
         let child_len: usize = if has_children { from_varint(from)? } else { 0 };
+
+        eprintln!("deserializing tree node {id:x} in {:?}. has children? {has_children} ({child_len}); has split? {has_left_right}", root_tree_info.0);
 
         let mut children = SortedVec::with_capacity(child_len);
 

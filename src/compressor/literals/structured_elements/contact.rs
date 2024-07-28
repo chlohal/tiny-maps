@@ -1,12 +1,12 @@
 use osmpbfreader::Tags;
 
-use crate::{compressor::literals::{literal_value::LiteralValue, string_prefix_view::StrAsciiPrefixView, Literal, LiteralPool}, storage::serialize_min::SerializeMinimal};
+use crate::{compressor::literals::{literal_value::LiteralValue, string_prefix_view::StrAsciiPrefixView, Literal, LiteralPool}, storage::serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal}};
 
-use super::insert_with_byte;
+use super::{insert_with_byte, read_if_bit_set};
 
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 14;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OsmContactInfo {
     phone: Option<LiteralValue>,
     website: Option<LiteralValue>,
@@ -87,6 +87,73 @@ impl OsmContactInfo {
         } else {
             return Some(self);
         }
+    }
+}
+
+impl DeserializeFromMinimal for OsmContactInfo {
+    type ExternalData<'d> = ();
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+        let header_byte = from.read_one()?;
+
+        let phone = read_if_bit_set(
+            from,
+            &header_byte,
+            7,
+        )?;
+
+        let website = read_if_bit_set(
+            from,
+            &header_byte,
+            6,
+        )?;
+
+        let email = read_if_bit_set(
+            from,
+            &header_byte,
+            5,
+        )?;
+
+        let facebook = read_if_bit_set(
+            from,
+            &header_byte,
+            4,
+        )?;
+
+        let instagram = read_if_bit_set(
+            from,
+            &header_byte,
+            3,
+        )?;
+
+        let vk = read_if_bit_set(
+            from,
+            &header_byte,
+            2,
+        )?;
+
+        let twitter = read_if_bit_set(
+            from,
+            &header_byte,
+            1,
+        )?;
+
+        let prefix = read_if_bit_set(
+            from,
+            &header_byte,
+            0,
+        )?;
+
+        Ok(Self {
+            phone,
+            website,
+            email,
+            facebook,
+            instagram,
+            vk,
+            twitter,
+            prefix,
+        })
     }
 }
 

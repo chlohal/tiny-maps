@@ -8,7 +8,7 @@ use par_map::ParMap;
 
 const WRITE_EVERY_N_CHUNKS: usize = 1;
 
-fn main() -> Result<(), postgres::Error> {
+fn main() {
     let filename = args_os()
         .nth(1)
         .expect("Usage: tiny-map-postgres-import [OSMPBF file]");
@@ -45,5 +45,7 @@ fn main() -> Result<(), postgres::Error> {
 
     compressor.flush_to_storage().unwrap();
 
-    Ok(())
+    compressor.handle_retry_queue();
+
+    compressor.flush_to_storage().unwrap();
 }

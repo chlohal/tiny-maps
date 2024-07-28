@@ -12,6 +12,9 @@ impl<Disregard, T> DisregardWhenDeserializing<Disregard, T> {
     pub fn into_inner(self) -> T {
         self.0
     }
+    pub fn inner(&self) -> &T {
+        &self.0
+    }
 }
 
 impl<Disregard, T: Clone> Clone for DisregardWhenDeserializing<Disregard, T> {
@@ -49,9 +52,9 @@ impl<Disregard: 'static, T: SerializeMinimal> SerializeMinimal for DisregardWhen
     
 }
 
-pub trait OneDimensionalCoord: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint {}
+pub trait OneDimensionalCoord: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint + Add<Output = Self> + Sub<Output = Self> {}
 
-impl<T: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint> OneDimensionalCoord for T {}
+impl<T: 'static + Average + Clone + Copy + Zero + Ord + ToVarint + FromVarint + Add<Output = T> + Sub<Output = T>> OneDimensionalCoord for T {}
 
 #[derive(Copy, Clone)]
 pub struct PointRange<T: OneDimensionalCoord>(pub T, pub T);
@@ -63,8 +66,10 @@ impl<T: OneDimensionalCoord> MultidimensionalParent<1> for PointRange<T> {
         self.0 <= child.0 && child.1 <= self.1
     }
 
-    fn split_evenly_on_dimension(&self, dimension: &Self::DimensionEnum) -> (Self, Self) {
-        todo!()
+    fn split_evenly_on_dimension(&self, _dimension: &()) -> (Self, Self) {
+        let middle = Average::avg(self.0, self.1);
+
+        (PointRange(self.0, middle), PointRange(middle, self.1))
     }
 }
 
@@ -79,23 +84,23 @@ impl<T: OneDimensionalCoord> MultidimensionalKey<1> for Point<T> {
     type DeltaFromSelf = T;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool {
-        todo!()
+        parent.0 <= self.0 && self.0 <= parent.1
     }
 
     fn delta_from_parent(&self, parent: &Self::Parent) -> Self::DeltaFromParent {
-        todo!()
+        self.0 - parent.0
     }
 
     fn apply_delta_from_parent(delta: &Self::DeltaFromParent, parent: &Self::Parent) -> Self {
-        todo!()
+        Self(*delta + parent.0)
     }
 
     fn delta_from_self(finl: &Self::DeltaFromParent, initil: &Self::DeltaFromParent) -> Self::DeltaFromSelf {
-        todo!()
+        *finl - *initil
     }
 
     fn apply_delta_from_self(delta: &Self::DeltaFromSelf, initial: &Self::DeltaFromParent) -> Self::DeltaFromParent {
-        todo!()
+        *initial + *delta
     }
 }
 

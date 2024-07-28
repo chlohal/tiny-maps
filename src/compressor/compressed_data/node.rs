@@ -30,7 +30,7 @@ pub fn serialize_node<W: std::io::Write>(
     point: &BoundingBox<i32>,
 ) -> Result<(), std::io::Error> {
     if tags.other.is_empty() && tags.inline.is_single() {
-        return write_node_only_single_inlined_tags(write_to, external_data, point, tags.inline.single.clone());
+        return write_node_only_single_inlined_tags(write_to, external_data, point, tags.inline.single.clone(), id);
     }
 
     write_node_with_uninlined_tags(write_to, external_data, point, tags)
@@ -41,6 +41,7 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
     values: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
     point_bbox: &BoundingBox<i32>,
     tag: Option<NodeSingleInlined>,
+    id: &NodeId,
 ) -> std::io::Result<()> {
     //first byte layout:
 
@@ -65,7 +66,8 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
         typ |= tag as u8;
     }
 
-    write_to.write_all(&[typ])
+    write_to.write_all(&[typ])?;
+    id.0.write_varint(write_to)
 }
 
 fn write_node_with_uninlined_tags<W: std::io::Write>(

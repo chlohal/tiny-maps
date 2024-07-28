@@ -27,13 +27,39 @@ where
     jumble_collector_generation: usize,
 }
 
-pub mod serialize_min;
 mod lazy_file;
+pub mod serialize_min;
 
-pub trait StorageReachable<DeserializationData>: SerializeMinimal + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a DeserializationData> {
-    
-    fn flush_children<'a>(&'a mut self, _serialize_data: <Self as SerializeMinimal>::ExternalData<'a>) -> std::io::Result<()> {
+pub trait StorageReachable<DeserializationData>:
+    SerializeMinimal + for<'a> DeserializeFromMinimal<ExternalData<'a> = &'a DeserializationData>
+{
+    fn flush_children<'a>(
+        &'a mut self,
+        _serialize_data: <Self as SerializeMinimal>::ExternalData<'a>,
+    ) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+impl<D, T> std::fmt::Debug for Storage<D, T>
+where
+    for<'a> <T as SerializeMinimal>::ExternalData<'a>: Copy,
+    T: 'static + StorageReachable<D> + SerializeMinimal + std::fmt::Debug,
+    for<'a> T: DeserializeFromMinimal<ExternalData<'a> = &'a D>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("Storage");
+        debug.field("dirty", &self.dirty).field(
+            "jumble_collector_generation",
+            &self.jumble_collector_generation,
+        );
+
+        match self.inner.as_ref() {
+            Some(b) => debug.field("inner_data", b),
+            None => debug.field("inner_data", &None::<T>),
+        };
+
+        debug.finish()
     }
 }
 
@@ -43,11 +69,7 @@ where
     T: 'static + StorageReachable<D> + SerializeMinimal,
     for<'a> T: DeserializeFromMinimal<ExternalData<'a> = &'a D>,
 {
-    pub fn new<'a>(
-        id: PathBuf,
-        value: T,
-        deserialize_data: D,
-    ) -> Self {
+    pub fn new<'a>(id: PathBuf, value: T, deserialize_data: D) -> Self {
         Self {
             inner: Seq::new(value),
             file: LazyFile::new(id),
@@ -57,10 +79,7 @@ where
         }
     }
 
-    pub fn open(
-        id: PathBuf,
-        deserialize_data: D,
-    ) -> Self {
+    pub fn open(id: PathBuf, deserialize_data: D) -> Self {
         Self {
             inner: Seq::empty(),
             file: LazyFile::new(id),
@@ -130,8 +149,6 @@ where
         //this does the same thing as BufWriter, but it's easier & does the same
         //for performance
         let mut buf = Vec::new();
-
-        eprintln!("writing!");
         value.minimally_serialize(&mut buf, serialize_data).unwrap();
 
         let e = file_clone.write_all(&buf);
@@ -168,7 +185,8 @@ where
 
         let mut file_clone = self.file.try_clone().unwrap();
 
-        let val: T = T::deserialize_minimal(&mut file_clone, &self.deserialize_data).unwrap();
+        let val: T = T::deserialize_minimal(&mut file_clone, &self.deserialize_data)
+            .expect(&format!("file {:?} is valid", self.file.path));
 
         //assign to nothing to ignore the option
         let _ = self.inner.fill_unsafe(val);
@@ -180,9 +198,8 @@ where
         if self.inner.is_empty() {
             self.file.rewind().unwrap();
 
-            self.inner.fill(
-                T::deserialize_minimal(&mut self.file, &self.deserialize_data).unwrap()
-            );
+            self.inner
+                .fill(T::deserialize_minimal(&mut self.file, &self.deserialize_data).unwrap());
         }
     }
 
@@ -309,8 +326,8 @@ impl<T> Seq<T> {
             Safe(v) => Some(v.as_mut()),
         }
     }
-    
-    fn free(&mut self)  {
+
+    fn free(&mut self) {
         *self = Seq::InteriorMutable(Cell::new(None));
     }
 }

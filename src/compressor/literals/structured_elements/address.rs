@@ -10,7 +10,7 @@ use super::{super::{
 
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 20;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OsmAddress {
     number: Option<LiteralValue>,
     street: Option<LiteralValue>,
@@ -332,7 +332,7 @@ impl SerializeMinimal for OsmAddress {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OsmAddressExtra {
     housename: Option<LiteralValue>,
     unit: Option<LiteralValue>,
@@ -419,7 +419,7 @@ impl OsmAddressExtra {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OsmAddressEvenMoreExtra {
     hamlet: Option<LiteralValue>,
     suburb: Option<LiteralValue>,

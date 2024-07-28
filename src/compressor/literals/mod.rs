@@ -60,6 +60,17 @@ impl LiteralPool<LiteralValue> {
     }
 }
 
+pub fn attempt_literal_value_from_id(id: LiteralId) -> std::io::Result<LiteralValue> {
+    if id & 1 == 1 {
+        let id = id >> 1;
+        let mut blob = id.to_le_bytes();
+
+        LiteralValue::deserialize_minimal(&mut &blob[..], ())
+    } else {
+        Ok(LiteralValue::Ref(id >> 1))
+    }
+}
+
 fn insert_type_irrelevant<T: SerializeMinimal>(
     pool: &mut LiteralPool<T>,
     value_blob: Vec<u8>,
@@ -68,9 +79,9 @@ fn insert_type_irrelevant<T: SerializeMinimal>(
     if value_blob.len() <= INLINING_THRESHOLD_BYTES {
         let mut bytes: [u8; 8] = Default::default();
 
-        bytes[8 - value_blob.len()..].copy_from_slice(&value_blob[..]);
+        bytes[..value_blob.len()].copy_from_slice(&value_blob[..]);
 
-        let value = u64::from_be_bytes(bytes);
+        let value = u64::from_le_bytes(bytes);
 
         debug_assert!(value < u64::MAX);
 
@@ -96,12 +107,12 @@ fn insert_type_irrelevant<T: SerializeMinimal>(
     return Ok((i as u64) << 1);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Literal {
     KeyVar(LiteralKey, LiteralValue),
     WellKnownKeyVar(WellKnownKeyVar),
 
-    Ref(usize),
+    Ref(u64),
 }
 
 impl<A: Into<LiteralKey>, B: Into<LiteralValue>> From<(A, B)> for Literal {
@@ -180,7 +191,7 @@ impl SerializeMinimal for Literal {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub enum LiteralKey {
     WellKnownKey(WellKnownKey),
     Str(String),
@@ -192,14 +203,14 @@ impl<R: AsRef<str>> From<R> for LiteralKey {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum WellKnownKeyVar {
     Address(OsmAddress),
     MapFeatureType,
     Contact(OsmContactInfo),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
 pub enum WellKnownKey {
     Waterway = 0,

@@ -1,19 +1,28 @@
 use std::{
     fs::File,
     io::{Read, Seek, Write},
-    path::PathBuf,
+    path::PathBuf, sync::Mutex,
 };
 
 pub struct LazyFile {
-    path: PathBuf,
+    pub path: PathBuf,
     file: Option<File>,
+    file_is_definitely_empty: Mutex<bool>
 }
 
 impl Write for LazyFile {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let f_i_d_e = self.file_is_definitely_empty.get_mut().unwrap();
+
         if buf.len() > 0 {
+            *f_i_d_e = false;
             self.assure_created().write(buf)
         } else {
+            if *f_i_d_e {
+                std::fs::remove_file(&self.path)?;
+                self.file = None;
+                *f_i_d_e = false;
+            }
             Ok(0)
         }
     }
@@ -67,6 +76,7 @@ impl LazyFile {
             Some(f) => f.set_len(size),
             None => {
                 if size == 0 {
+                    *self.file_is_definitely_empty.lock().unwrap() = true;
                     Ok(())
                 } else {
                     self.open_create(|f| f.set_len(size))
@@ -80,10 +90,12 @@ impl LazyFile {
             Some(f) => Ok(Self {
                 path: self.path.clone(),
                 file: Some(f.try_clone()?),
+                file_is_definitely_empty: false.into(),
             }),
             None => Ok(Self {
                 path: self.path.clone(),
                 file: Some(self.create()),
+                file_is_definitely_empty: false.into(),
             }),
         }
     }
@@ -114,6 +126,6 @@ impl LazyFile {
     }
 
     pub fn new(path: PathBuf) -> Self {
-        Self { path, file: None }
+        Self { path, file: None, file_is_definitely_empty: false.into(), }
     }
 }

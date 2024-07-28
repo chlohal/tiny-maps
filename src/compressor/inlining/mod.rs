@@ -5,7 +5,7 @@ use super::literals::{literal_value::LiteralValue, Literal, LiteralKey};
 pub mod node;
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InlinedTags<InlineObjType: Clone> {
     pub inline: InlineObjType,
     pub other: Vec<Literal>,

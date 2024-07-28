@@ -3,17 +3,20 @@ use std::{fs::File, path::PathBuf, rc::Rc};
 use sorted_vec::SortedVec;
 
 use super::{
-    compare_by::OrderByFirst, point_range::DisregardWhenDeserializing, tree_traits::{MultidimensionalKey, MultidimensionalParent, MultidimensionalValue}, NODE_SATURATION_POINT
+    compare_by::OrderByFirst,
+    point_range::DisregardWhenDeserializing,
+    tree_traits::{MultidimensionalKey, MultidimensionalParent, MultidimensionalValue},
+    NODE_SATURATION_POINT,
 };
 use crate::{
-    storage::{
-        serialize_min::SerializeMinimal,
-        Storage,
-    },
+    storage::{serialize_min::SerializeMinimal, Storage},
     tree::tree_traits::Dimension,
 };
 
-pub type StoredPointTree<const D: usize, K, T> = Storage<(RootTreeInfo, u64, <K as MultidimensionalKey<D>>::Parent), LongLatTree<D, K, DisregardWhenDeserializing<K, T>>>;
+pub type StoredPointTree<const D: usize, K, T> = Storage<
+    (RootTreeInfo, u64, <K as MultidimensionalKey<D>>::Parent),
+    LongLatTree<D, K, DisregardWhenDeserializing<K, T>>,
+>;
 
 pub type StoredTree<const D: usize, K, T> =
     Storage<(RootTreeInfo, u64, <K as MultidimensionalKey<D>>::Parent), LongLatTree<D, K, T>>;
@@ -66,10 +69,53 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(next) = self.current_tree_children.1.next() {
-                if Key::apply_delta_from_parent(&next.0, &self.current_tree_children.0)
-                    .is_contained_in(&self.query_bbox)
+                let key = Key::apply_delta_from_parent(&next.0, &self.current_tree_children.0);
+                if key.is_contained_in(&self.query_bbox)
                 {
                     return Some(&next.1);
+                }
+            } else {
+                let tree = self.parent_tree_stack.pop()?.deref();
+                if let Some((ref l, ref r)) = tree.left_right_split {
+                    self.parent_tree_stack.push(l);
+                    self.parent_tree_stack.push(r);
+                }
+                self.current_tree_children = (&tree.bbox, tree.children.iter());
+            }
+        }
+    }
+}
+
+pub struct LongLatTreeEntries<'a, const DIMENSION_COUNT: usize, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
+{
+    query_bbox: &'a Key::Parent,
+    parent_tree_stack: Vec<&'a StoredTree<DIMENSION_COUNT, Key, Value>>,
+    current_tree_children: (
+        &'a Key::Parent,
+        std::slice::Iter<'a, OrderByFirst<Key::DeltaFromParent, Value>>,
+    ),
+}
+
+impl<'a, const DIMENSION_COUNT: usize, Key, Value> Iterator
+    for LongLatTreeEntries<'a, DIMENSION_COUNT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
+{
+    type Item = (Key, &'a Value);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(next) = self.current_tree_children.1.next() {
+                let key = Key::apply_delta_from_parent(&next.0, &self.current_tree_children.0);
+                if key.is_contained_in(&self.query_bbox)
+                {
+                    return Some((key.clone(), &next.1));
                 }
             } else {
                 let tree = self.parent_tree_stack.pop()?.deref();
@@ -100,6 +146,33 @@ where
             id: 1,
         }
     }
+    pub fn find_first_item_at_key_exact<'a, 'b>(&'a self, query: &'b Key) -> Option<&'a Value> {
+        let mut tree = self;
+
+        let (leaf, leaf_bbox) = loop {
+            match tree.left_right_split {
+                Some((ref left, ref right)) => {
+                    if query.is_contained_in(&left.deref().bbox) {
+                        tree = left.deref();
+                        continue;
+                    } else if query.is_contained_in(&right.deref().bbox) {
+                        tree = right.deref();
+                        continue;
+                    }
+                }
+                None => {}
+            }
+
+            break (&tree.children, &tree.bbox);
+        };
+
+        let delta = query.delta_from_parent(leaf_bbox);
+
+        let idx = leaf.binary_search_by_key(&delta, |item| item.0).ok()?;
+
+        leaf.get(idx).map(|x| &x.1)
+    }
+
     pub fn find_items_in_box<'a>(
         &'a self,
         query_bbox: &'a Key::Parent,
@@ -123,6 +196,37 @@ where
             }
             None => {
                 return LongLatTreeItems {
+                    query_bbox,
+                    parent_tree_stack: Vec::with_capacity(0),
+                    current_tree_children: (&self.bbox, self.children.iter()),
+                }
+            }
+        }
+    }
+
+    pub fn find_entries_in_box<'a>(
+        &'a self,
+        query_bbox: &'a Key::Parent,
+    ) -> LongLatTreeEntries<'a, DIMENSION_COUNT, Key, Value> {
+        match &self.left_right_split {
+            Some((left, right)) => {
+                let l = left.deref();
+                let r = right.deref();
+
+                if l.bbox.contains(query_bbox) {
+                    return l.find_entries_in_box(query_bbox);
+                } else if r.bbox.contains(query_bbox) {
+                    return r.find_entries_in_box(query_bbox);
+                } else {
+                    return LongLatTreeEntries {
+                        query_bbox,
+                        parent_tree_stack: vec![left, right],
+                        current_tree_children: (&self.bbox, self.children.iter()),
+                    };
+                }
+            }
+            None => {
+                return LongLatTreeEntries {
                     query_bbox,
                     parent_tree_stack: Vec::with_capacity(0),
                     current_tree_children: (&self.bbox, self.children.iter()),
@@ -168,8 +272,8 @@ where
         if depth > 1 {
             match self.left_right_split {
                 Some((ref mut l, ref mut r)) => {
-                    l.modify(|tree| tree.expand_to_depth(depth - 1));
-                    r.modify(|tree| tree.expand_to_depth(depth - 1));
+                    l.ref_mut().expand_to_depth(depth - 1);
+                    r.ref_mut().expand_to_depth(depth - 1);
                 }
                 None => unreachable!(),
             }
