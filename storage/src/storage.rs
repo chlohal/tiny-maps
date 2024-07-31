@@ -140,7 +140,7 @@ where
         self.file.set_len(0).unwrap();
 
         //avoid many small allocations by serializing to a buffer first
-        //this does the same thing as BufWriter, but it's easier & does the same
+        //this does the same thing as BufWriter, but it's easier & it's actually better
         //for performance
         let mut buf = Vec::new();
         value.minimally_serialize(&mut buf, serialize_data).unwrap();

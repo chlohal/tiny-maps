@@ -1,4 +1,4 @@
-use std::{env, fs::File};
+use std::{env, fs::File, io::Write};
 
 use clap::Parser;
 use offline_tiny_maps::compressor::Compressor;
@@ -15,11 +15,11 @@ fn main() {
 
     let mut reader = osmpbfreader::OsmPbfReader::new(file);
 
-    let mut compressor = Compressor::new(
-        env::current_dir()
-            .unwrap()
-            .join(args.output.unwrap_or(".map".into())),
-    );
+    let state_dir = env::current_dir()
+    .unwrap()
+    .join(args.output.unwrap_or(".map".into()));
+
+    let mut compressor = Compressor::new(&state_dir);
 
     let blobs = reader
         .blobs()
@@ -45,6 +45,15 @@ fn main() {
             compressor.flush_to_storage().unwrap();
             blobs_since_last_write = 0;
         }
+    }
+
+    let incompleted_relations = compressor.attempt_retry_queue();
+
+    let mut incomplete_file = std::fs::File::create(&state_dir.join("incomplete_relations.note")).unwrap();
+
+    writeln!(&mut incomplete_file, "Incomplete relations:").unwrap();
+    for item in incompleted_relations {
+        writeln!(&mut incomplete_file, "{}", item.id().inner_id()).unwrap();
     }
 
     compressor.flush_to_storage().unwrap();

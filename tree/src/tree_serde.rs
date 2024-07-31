@@ -1,14 +1,12 @@
 use std::{
     collections::VecDeque,
-    io::{Seek, Write},
     rc::Rc,
 };
 
-use sorted_vec::SortedVec;
-
+use btree_vec::BTreeVec;
 use minimal_storage::{
-    varint::{from_varint, ToVarint},
-    serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
+    varint::{FromVarint, ToVarint},
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
     StorageReachable,
 };
 
@@ -35,36 +33,15 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        let has_left_right = self.left_right_split.is_some() as u8;
-        let has_children = !self.children.is_empty() as u8;
 
-        let mut file = self.root_tree_info.1.try_clone().unwrap();
-        let id_based_byte_offset = self.id / 4;
-        let offset_in_byte = (self.id % 4) * 2;
+        let header = (self.children.len() << 1) | (self.left_right_split.is_some() as usize);
 
-        if file.metadata().unwrap().len() < (id_based_byte_offset + 2) {
-            file.set_len(id_based_byte_offset + 2)?;
-        }
-        file.seek(std::io::SeekFrom::Start(id_based_byte_offset))
-            .unwrap();
-        let mut b = file.read_one().unwrap();
-
-        b |= has_left_right << (offset_in_byte + 1);
-        b |= has_children << offset_in_byte;
-
-        file.seek(std::io::SeekFrom::Start(id_based_byte_offset))
-            .unwrap();
-        file.write_all(&[b]).unwrap();
-        file.flush().unwrap();
-
-        drop(file);
+        header.write_varint(write_to)?;
 
         if !self.children.is_empty() {
-            self.children.len().write_varint(write_to)?;
-
             let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
 
-            for OrderByFirst(bbox, child) in self.children.iter() {
+            for (bbox, child) in self.children.iter() {
                 let offset = Key::delta_from_self(bbox, &last_bbox);
 
                 offset.minimally_serialize(write_to, ())?;
@@ -93,15 +70,10 @@ where
     ) -> Result<Self, std::io::Error> {
         let (ref root_tree_info, id, bbox) = external_data;
 
-        let mut file = root_tree_info.1.try_clone().unwrap();
-        let id_based_byte_offset = id / 4;
-        let offset_in_byte = (id % 4) * 2;
+        let header = usize::from_varint(from)?;
 
-        file.seek(std::io::SeekFrom::Start(id_based_byte_offset))?;
-        let header_chunk = file.read_one()?;
-
-        let has_left_right = (header_chunk >> (offset_in_byte + 1)) & 1 == 1;
-        let has_children = (header_chunk >> offset_in_byte) & 1 == 1;
+        let child_len = header >> 1;
+        let has_left_right = (header & 1) == 1;
 
         let axis_index = (u64::BITS - id.leading_zeros()).checked_sub(1).unwrap() as usize % DIMENSION_COUNT;
 
@@ -110,9 +82,7 @@ where
                 axis_index,
             );
 
-        let child_len: usize = if has_children { from_varint(from)? } else { 0 };
-
-        let mut children = SortedVec::with_capacity(child_len);
+        let mut children = BTreeVec::with_capacity(child_len);
 
         let mut last_bbox = Key::DeltaFromParent::zero();
 
@@ -125,7 +95,7 @@ where
 
             let item = Value::deserialize_minimal(from, &abs_bbox)?;
 
-            children.push(OrderByFirst(delt_bbox, item));
+            children.push(delt_bbox, item);
         }
 
         let left_right_split = if has_left_right {

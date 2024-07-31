@@ -272,9 +272,7 @@ impl Zero for DeltaBoundingBox<u32> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DeltaBoundingBox<T: lindel::IdealKey<2>>
-where
-    <T as lindel::IdealKey<2>>::Key: Debug + Clone + Copy,
+pub struct DeltaBoundingBox<T>
 {
     x: T,
     y: T,
@@ -304,7 +302,7 @@ impl Ord for DeltaBoundingBox<u32> {
 
 impl DeltaBoundingBox<u32> {
     pub fn morton_origin_point(&self) -> u64 {
-        lindel::hilbert_encode([self.x, self.y])
+        lutmorton::morton(self.x, self.y)
     }
 
     pub fn delta_friendly_offset(&self, initial: &Self) -> DeltaFriendlyU32Offset {
@@ -319,7 +317,7 @@ impl DeltaBoundingBox<u32> {
         from: &DeltaFriendlyU32Offset,
         initial: &DeltaBoundingBox<u32>,
     ) -> Self {
-        let [x, y] = lindel::hilbert_decode(from.0 + initial.morton_origin_point());
+        let (x, y) = lutmorton::unmorton(from.0 + initial.morton_origin_point());
         Self {
             x,
             y,

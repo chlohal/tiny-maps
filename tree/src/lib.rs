@@ -24,19 +24,15 @@ where
 {
     std::fs::create_dir_all(&state_path).unwrap();
 
-    let tree_structure_file = std::fs::File::options()
-        .create(true)
-        .write(true)
-        .read(true)
-        .open(state_path.join("structure"))
-        .unwrap();
-
-    let geo_dir_rc = std::rc::Rc::new((state_path.clone(), tree_structure_file));
-
     let root_file = state_path.join("root");
 
+    let geo_dir_rc = std::rc::Rc::new(state_path.clone());
+
     if root_file.exists() {
-        StoredTree::<D, Key, Value>::open(root_file, (geo_dir_rc, 1, global_area))
+        StoredTree::<D, Key, Value>::open(
+            root_file,
+            (geo_dir_rc, 1, global_area),
+        )
     } else {
         StoredTree::<D, Key, Value>::new(
             root_file,

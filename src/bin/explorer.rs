@@ -8,7 +8,7 @@ use tree::{bbox::EARTH_BBOX, point_range::PointRange};
 fn main() {
     let args = Args::parse();
 
-    let mut compressor = Compressor::new(env::current_dir().unwrap().join(args.data_dir));
+    let mut compressor = Compressor::new(&env::current_dir().unwrap().join(args.data_dir));
 
     for item in compressor.geography.deref().find_entries_in_box(&EARTH_BBOX) {
         dbg!(item);

@@ -6,7 +6,7 @@ use std::{
 };
 
 use compressed_data::{flattened_id, unflattened_id, CompressedOsmData, UncompressedOsmData};
-use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
+use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 use osmpbfreader::{OsmId, OsmObj};
 
 use tree::{
@@ -28,8 +28,8 @@ pub struct Compressor {
 }
 
 impl Compressor {
-    pub fn new(state_path: PathBuf) -> Self {
-        create_dir_all(&state_path).unwrap();
+    pub fn new(state_path: &PathBuf) -> Self {
+        create_dir_all(state_path).unwrap();
 
         let lit_file = BufWriter::new(open_file_with_write(&state_path.join("literals")));
         let val_file = BufWriter::new(open_file_with_write(&state_path.join("values")));
@@ -59,13 +59,21 @@ impl Compressor {
         }
     }
     pub fn get_element_bbox(&self, id: &OsmId) -> Option<&BoundingBox<i32>> {
-        let f = self.cache_bboxes.deref().find_first_item_at_key_exact(&Point(flattened_id(id))).map(|x| x.inner());
+        let f = self
+            .cache_bboxes
+            .deref()
+            .find_first_item_at_key_exact(&Point(flattened_id(id)))
+            .map(|x| x.inner());
         f
     }
-    pub fn get_elements_bbox_in_range<'a>(&'a self, range: &'a PointRange<u64>) -> impl Iterator<Item = (OsmId, &'a BoundingBox<i32>)> + 'a {
-        self.cache_bboxes.deref().find_entries_in_box(range).map(|(Point(id), bbox)| {
-            (unflattened_id(id), bbox.inner())
-        })
+    pub fn get_elements_bbox_in_range<'a>(
+        &'a self,
+        range: &'a PointRange<u64>,
+    ) -> impl Iterator<Item = (OsmId, &'a BoundingBox<i32>)> + 'a {
+        self.cache_bboxes
+            .deref()
+            .find_entries_in_box(range)
+            .map(|(Point(id), bbox)| (unflattened_id(id), bbox.inner()))
     }
     pub fn write_element(&mut self, element: OsmObj) {
         let data = CompressedOsmData::make_from_obj(element, &mut self.cache_bboxes);
@@ -94,20 +102,37 @@ impl Compressor {
 
         Ok(())
     }
-    
-    pub fn handle_retry_queue(&mut self) {
-        while let Some(elem) = self.queue_to_handle_at_end.pop_front() {
-            eprintln!("Attempting to handle retry queue -- {} items ({:?})", self.queue_to_handle_at_end.len(), elem.id());
-            self.write_element(elem);
+
+    pub fn attempt_retry_queue<'a>(&'a mut self) -> impl Iterator<Item = OsmObj> + 'a {
+        let mut len = self.queue_to_handle_at_end.len();
+
+        //try 5 times to reduce the size
+        for _ in 0..5 {
+            //keep going as long as the size reduces. if it stays the same,
+            //then fall through to another of the 5 previous tries.
+            loop {
+                for _ in 0..len {
+                    let elem = self.queue_to_handle_at_end.pop_front().unwrap();
+
+                    self.write_element(elem);
+                }
+
+                if self.queue_to_handle_at_end.len() == len {
+                    break;
+                }
+            }
+            len = self.queue_to_handle_at_end.len();
         }
+
+        self.queue_to_handle_at_end.drain(..)
     }
 }
 
 fn open_file_with_write(path: &PathBuf) -> File {
     File::options()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .unwrap()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap()
 }

@@ -1,11 +1,8 @@
 [package]
-name = "tree"
+name = "btree_vec"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-minimal_storage = { path = "../storage" }
-lutmorton = { path = "../lutmorton" }
-btree_vec = { path = "../btree_vec" }

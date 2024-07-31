@@ -1,11 +1,11 @@
-use std::{fs::File, path::PathBuf, rc::Rc};
+use std::{path::PathBuf, rc::Rc};
 
-use sorted_vec::SortedVec;
+use btree_vec::BTreeVec;
 
 use super::{
     compare_by::OrderByFirst,
     point_range::DisregardWhenDeserializing,
-    tree_traits::{MultidimensionalKey, MultidimensionalParent, MultidimensionalValue, Dimension},
+    tree_traits::{Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue},
     NODE_SATURATION_POINT,
 };
 use minimal_storage::{serialize_min::SerializeMinimal, Storage};
@@ -30,7 +30,7 @@ where
         <<Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent as MultidimensionalParent<
             DIMENSION_COUNT,
         >>::DimensionEnum,
-    pub(super) children: SortedVec<OrderByFirst<Key::DeltaFromParent, Value>>,
+    pub(super) children: BTreeVec<Key::DeltaFromParent, Value>,
     pub(super) left_right_split: Option<(
         StoredTree<DIMENSION_COUNT, Key, Value>,
         StoredTree<DIMENSION_COUNT, Key, Value>,
@@ -38,7 +38,7 @@ where
     pub(super) id: u64,
 }
 
-pub(super) type RootTreeInfo = Rc<(PathBuf, File)>;
+pub(super) type RootTreeInfo = Rc<PathBuf>;
 
 pub struct LongLatTreeItems<'a, const DIMENSION_COUNT: usize, Key, Value>
 where
@@ -50,7 +50,7 @@ where
     parent_tree_stack: Vec<&'a StoredTree<DIMENSION_COUNT, Key, Value>>,
     current_tree_children: (
         &'a Key::Parent,
-        std::slice::Iter<'a, OrderByFirst<Key::DeltaFromParent, Value>>,
+        btree_vec::Iter<'a, Key::DeltaFromParent, Value>,
     ),
 }
 
@@ -67,8 +67,7 @@ where
         loop {
             if let Some(next) = self.current_tree_children.1.next() {
                 let key = Key::apply_delta_from_parent(&next.0, &self.current_tree_children.0);
-                if key.is_contained_in(&self.query_bbox)
-                {
+                if key.is_contained_in(&self.query_bbox) {
                     return Some(&next.1);
                 }
             } else {
@@ -93,7 +92,7 @@ where
     parent_tree_stack: Vec<&'a StoredTree<DIMENSION_COUNT, Key, Value>>,
     current_tree_children: (
         &'a Key::Parent,
-        std::slice::Iter<'a, OrderByFirst<Key::DeltaFromParent, Value>>,
+        btree_vec::Iter<'a, Key::DeltaFromParent, Value>,
     ),
 }
 
@@ -110,8 +109,7 @@ where
         loop {
             if let Some(next) = self.current_tree_children.1.next() {
                 let key = Key::apply_delta_from_parent(&next.0, &self.current_tree_children.0);
-                if key.is_contained_in(&self.query_bbox)
-                {
+                if key.is_contained_in(&self.query_bbox) {
                     return Some((key.clone(), &next.1));
                 }
             } else {
@@ -138,7 +136,7 @@ where
             bbox,
             direction:
                 <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default(),
-            children: SortedVec::new(),
+            children: BTreeVec::new(),
             left_right_split: None,
             id: 1,
         }
@@ -165,9 +163,7 @@ where
 
         let delta = query.delta_from_parent(leaf_bbox);
 
-        let idx = leaf.binary_search_by_key(&delta, |item| item.0).ok()?;
-
-        leaf.get(idx).map(|x| &x.1)
+        leaf.iter().filter(|x| *x.0 == delta).map(|x| x.1).next()
     }
 
     pub fn find_items_in_box<'a>(
@@ -258,7 +254,7 @@ where
         };
 
         let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
-        leaf.push(OrderByFirst(interior_delta_bbox, item));
+        leaf.push(interior_delta_bbox, item);
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
@@ -282,26 +278,21 @@ where
 
         let (left_bb, right_bb) = self.bbox.split_evenly_on_dimension(&self.direction);
 
-        let mut left_children = SortedVec::new();
-        let mut both_children = SortedVec::new();
-        let mut right_children = SortedVec::new();
+        let mut left_children = BTreeVec::new();
+        let mut right_children = BTreeVec::new();
 
-        for OrderByFirst(child_bbox, item) in self.children.drain(..) {
+        let children = std::mem::take(&mut self.children);
+
+        for (child_bbox, item) in children.into_iter() {
             let bb_abs = Key::apply_delta_from_parent(&child_bbox, &self.bbox);
 
             if bb_abs.is_contained_in(&left_bb) {
-                left_children.push(OrderByFirst(bb_abs.delta_from_parent(&left_bb), item));
+                left_children.push(bb_abs.delta_from_parent(&left_bb), item);
             } else if bb_abs.is_contained_in(&right_bb) {
-                right_children.push(OrderByFirst(bb_abs.delta_from_parent(&right_bb), item));
+                right_children.push(bb_abs.delta_from_parent(&right_bb), item);
             } else {
-                both_children.push(OrderByFirst(child_bbox, item));
+                self.children.push(child_bbox, item);
             }
-        }
-
-        debug_assert!(self.children.is_empty());
-
-        for c in both_children.into_vec() {
-            self.children.push(c);
         }
 
         let (left_path, left_id) = self.make_branch_id(0);
@@ -347,7 +338,7 @@ pub(super) fn branch_id_creation(
 ) -> (PathBuf, u64) {
     let new_id = (id << 1) | direction_bit;
 
-    let info = root_path.0.join(format!("{:x}", new_id));
+    let info = root_path.join(format!("{:x}", new_id));
 
     (info, new_id)
 }
