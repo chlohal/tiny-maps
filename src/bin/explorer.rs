@@ -3,18 +3,18 @@ use std::env;
 use clap::Parser;
 use offline_tiny_maps::compressor::Compressor;
 
-use tree::{bbox::EARTH_BBOX, point_range::PointRange};
+use tree::bbox::EARTH_BBOX;
 
 fn main() {
     let args = Args::parse();
 
-    let mut compressor = Compressor::new(&env::current_dir().unwrap().join(args.data_dir));
+    let compressor = Compressor::new(&env::current_dir().unwrap().join(args.data_dir));
 
-    for item in compressor.geography.deref().find_entries_in_box(&EARTH_BBOX) {
+    for item in compressor.geography.find_entries_in_box(&EARTH_BBOX) {
         dbg!(item);
     }
 
-    for (id, item) in compressor.get_elements_bbox_in_range(&PointRange(0, u64::MAX)) {
+    for (id, item) in compressor.get_elements_bbox_in_range(&(0..=u64::MAX)) {
         dbg!((id, item));
     }
 

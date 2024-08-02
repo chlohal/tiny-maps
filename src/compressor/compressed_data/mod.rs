@@ -3,7 +3,7 @@ use osmpbfreader::{NodeId, OsmId, OsmObj, RelationId, WayId};
 use relation::osm_relation_to_compressed_node;
 use way::osm_way_to_compressed_node;
 
-use tree::{bbox::BoundingBox, point_range::{Point, StoredBinaryTree}, StoredPointTree};
+use tree::{bbox::BoundingBox, point_range::StoredBinaryTree, StoredPointTree};
 
 use minimal_storage::{serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal}, varint::{from_varint, to_varint, ToVarint}};
 
@@ -40,7 +40,7 @@ impl CompressedOsmData {
         }
     }
 
-    pub fn make_from_obj(value: OsmObj, bbox_cache: &mut StoredPointTree<1, Point<u64>, BoundingBox<i32>>) -> Result<Self, OsmObj> {
+    pub fn make_from_obj(value: OsmObj, bbox_cache: &mut StoredPointTree<1, u64, BoundingBox<i32>>) -> Result<Self, OsmObj> {
         let value = match value {
             OsmObj::Node(n) => osm_node_to_compressed_node(n),
             OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache),
@@ -88,7 +88,7 @@ pub fn unflattened_id(id: u64) -> OsmId {
 fn insert_bbox(id: &OsmId, bbox: BoundingBox<i32>, bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>) {
     let inner = flattened_id(id);
 
-    bbox_cache.ref_mut().insert(&Point(inner), bbox.into());
+    bbox_cache.insert(&inner, bbox.into());
 }
 
 impl DeserializeFromMinimal for CompressedOsmData {

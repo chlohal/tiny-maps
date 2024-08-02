@@ -3,11 +3,16 @@ mod compare_by;
 pub mod point_range;
 mod tree;
 pub mod tree_traits;
-
+mod structure;
 mod tree_serde;
 
-const NODE_SATURATION_POINT: usize = 8_000;
 
+#[cfg(test)]
+mod test;
+
+const NODE_SATURATION_POINT: usize = 8000;
+
+use structure::LongLatTree;
 pub use tree::*;
 use tree_traits::{MultidimensionalKey, MultidimensionalValue};
 
@@ -16,7 +21,7 @@ use minimal_storage::serialize_min::SerializeMinimal;
 pub fn open_tree<const D: usize, Key, Value>(
     state_path: std::path::PathBuf,
     global_area: Key::Parent,
-) -> StoredTree<D, Key, Value>
+) -> LongLatTree<D, Key, Value>
 where
     Key: MultidimensionalKey<D>,
     Value: MultidimensionalValue<Key>,
@@ -28,16 +33,5 @@ where
 
     let geo_dir_rc = std::rc::Rc::new(state_path.clone());
 
-    if root_file.exists() {
-        StoredTree::<D, Key, Value>::open(
-            root_file,
-            (geo_dir_rc, 1, global_area),
-        )
-    } else {
-        StoredTree::<D, Key, Value>::new(
-            root_file,
-            LongLatTree::<D, Key, Value>::new(global_area.clone(), std::rc::Rc::clone(&geo_dir_rc)),
-            (geo_dir_rc, 1, global_area),
-        )
-    }
+    LongLatTree::new(global_area, state_path)
 }

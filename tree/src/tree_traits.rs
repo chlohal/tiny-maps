@@ -1,7 +1,14 @@
 use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use std::fmt::Debug;
 
-pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>: Sized + Clone {
+pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
+    Sized
+    + Clone
+    + SerializeMinimal<ExternalData<'static> = ()>
+    + DeserializeFromMinimal<ExternalData<'static> = ()>
+    + Eq
+    + Debug
+{
     type DimensionEnum: Dimension<DIMENSION_COUNT>;
 
     fn contains(&self, child: &Self) -> bool;
@@ -9,20 +16,29 @@ pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>: Sized + Clone {
 }
 
 pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
-    Sized + 'static + Clone + Copy
+    Sized + 'static + Clone + Copy + Debug
 {
     type Parent: MultidimensionalParent<DIMENSION_COUNT>;
 
     type DeltaFromParent: Ord + Zero + Copy + Clone + Debug;
-    type DeltaFromSelf: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal<ExternalData<'static> = ()> + Zero + Debug;
+    type DeltaFromSelf: SerializeMinimal<ExternalData<'static> = ()>
+        + DeserializeFromMinimal<ExternalData<'static> = ()>
+        + Zero
+        + Debug;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool;
 
     fn delta_from_parent(&self, parent: &Self::Parent) -> Self::DeltaFromParent;
     fn apply_delta_from_parent(delta: &Self::DeltaFromParent, parent: &Self::Parent) -> Self;
 
-    fn delta_from_self(finl: &Self::DeltaFromParent, initil: &Self::DeltaFromParent) -> Self::DeltaFromSelf;
-    fn apply_delta_from_self(delta: &Self::DeltaFromSelf, initial: &Self::DeltaFromParent) -> Self::DeltaFromParent;
+    fn delta_from_self(
+        finl: &Self::DeltaFromParent,
+        initil: &Self::DeltaFromParent,
+    ) -> Self::DeltaFromSelf;
+    fn apply_delta_from_self(
+        delta: &Self::DeltaFromSelf,
+        initial: &Self::DeltaFromParent,
+    ) -> Self::DeltaFromParent;
 }
 
 pub trait MultidimensionalValue<Key>:
@@ -43,7 +59,7 @@ impl<Key, T> MultidimensionalValue<Key> for T where
 {
 }
 
-pub trait Dimension<const NUM: usize>: Default {
+pub trait Dimension<const NUM: usize>: Default + Copy {
     fn next_axis(&self) -> Self;
     fn from_index(index: usize) -> Self;
 }
@@ -57,7 +73,6 @@ impl Dimension<1> for () {
         ()
     }
 }
-
 
 pub trait Zero {
     fn zero() -> Self;

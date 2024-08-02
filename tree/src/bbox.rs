@@ -7,7 +7,7 @@ use minimal_storage::{
 
 use super::tree_traits::{Average, Dimension, MultidimensionalKey, MultidimensionalParent, Zero};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundingBox<T> {
     x: T,
     y: T,
@@ -156,16 +156,17 @@ impl BoundingBox<i32> {
         }
     }
 
-    pub fn interior_delta(&self, parent: &Self) -> DeltaBoundingBox<u32> {
+    pub fn interior_delta(&self, parent: &Self) -> DeltaBoundingBox32 {
         let x = self.x.abs_diff(parent.x);
         let y = self.y.abs_diff(parent.y);
 
         let width = self.x.abs_diff(self.x_end);
         let height = self.y.abs_diff(self.y_end);
 
-        DeltaBoundingBox {
-            x,
-            y,
+        let xy = lutmorton::morton(x, y);
+
+        DeltaBoundingBox32 {
+            xy,
             width,
             height,
         }
@@ -230,7 +231,7 @@ impl MultidimensionalParent<2> for BoundingBox<i32> {
 impl MultidimensionalKey<2> for BoundingBox<i32> {
     type Parent = BoundingBox<i32>;
 
-    type DeltaFromParent = DeltaBoundingBox<u32>;
+    type DeltaFromParent = DeltaBoundingBox32;
     type DeltaFromSelf = DeltaFriendlyU32Offset;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool {
@@ -256,15 +257,14 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
         delta: &Self::DeltaFromSelf,
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent {
-        DeltaBoundingBox::<u32>::from_delta_friendly_offset(delta, initial)
+        DeltaBoundingBox32::from_delta_friendly_offset(delta, initial)
     }
 }
 
-impl Zero for DeltaBoundingBox<u32> {
+impl Zero for DeltaBoundingBox32 {
     fn zero() -> Self {
         Self {
-            x: 0,
-            y: 0,
+            xy: 0,
             width: 0,
             height: 0,
         }
@@ -272,42 +272,37 @@ impl Zero for DeltaBoundingBox<u32> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DeltaBoundingBox<T>
+pub struct DeltaBoundingBox32
 {
-    x: T,
-    y: T,
-    width: T,
-    height: T,
+    xy: u64,
+    width: u32,
+    height: u32,
 }
 
-impl PartialEq for DeltaBoundingBox<u32> {
+impl PartialEq for DeltaBoundingBox32 {
     fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y
+        self.xy == other.xy
     }
 }
 
-impl Eq for DeltaBoundingBox<u32> {}
+impl Eq for DeltaBoundingBox32 {}
 
-impl PartialOrd for DeltaBoundingBox<u32> {
+impl PartialOrd for DeltaBoundingBox32 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for DeltaBoundingBox<u32> {
+impl Ord for DeltaBoundingBox32 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.morton_origin_point().cmp(&other.morton_origin_point())
+        self.xy.cmp(&other.xy)
     }
 }
 
-impl DeltaBoundingBox<u32> {
-    pub fn morton_origin_point(&self) -> u64 {
-        lutmorton::morton(self.x, self.y)
-    }
-
+impl DeltaBoundingBox32 {
     pub fn delta_friendly_offset(&self, initial: &Self) -> DeltaFriendlyU32Offset {
         DeltaFriendlyU32Offset(
-            self.morton_origin_point() - initial.morton_origin_point(),
+            self.xy - initial.xy,
             self.width,
             self.height,
         )
@@ -315,20 +310,21 @@ impl DeltaBoundingBox<u32> {
 
     pub fn from_delta_friendly_offset(
         from: &DeltaFriendlyU32Offset,
-        initial: &DeltaBoundingBox<u32>,
+        initial: &DeltaBoundingBox32,
     ) -> Self {
-        let (x, y) = lutmorton::unmorton(from.0 + initial.morton_origin_point());
         Self {
-            x,
-            y,
+            xy: from.0 + initial.xy,
             width: from.1,
             height: from.2,
         }
     }
 
     pub fn absolute(&self, parent: &BoundingBox<i32>) -> BoundingBox<i32> {
-        let x = parent.y.checked_add_unsigned(self.x).unwrap();
-        let y = parent.y.checked_add_unsigned(self.y).unwrap();
+        let (x, y) = lutmorton::unmorton(self.xy);
+
+        let x = parent.y.checked_add_unsigned(x).unwrap();
+        let y = parent.y.checked_add_unsigned(y).unwrap();
+
         BoundingBox {
             x,
             y,

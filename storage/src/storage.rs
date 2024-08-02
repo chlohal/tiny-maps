@@ -10,7 +10,7 @@ enum Seq<T> {
 use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use Seq::*;
 
-const JUMBLE_COLLECTOR_MAX_GEN: usize = 250;
+const JUMBLE_COLLECTOR_MAX_GEN: usize = 8;
 
 pub struct Storage<D, T>
 where
@@ -220,6 +220,10 @@ where
 }
 
 fn open_file(path: &PathBuf) -> File {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    
     File::options()
             .create(true)
             .read(true)

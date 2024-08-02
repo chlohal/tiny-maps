@@ -1,54 +1,44 @@
-use std::{
-    collections::VecDeque,
-    rc::Rc,
-};
+use std::path::PathBuf;
 
 use btree_vec::BTreeVec;
 use minimal_storage::{
-    varint::{FromVarint, ToVarint},
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
-    StorageReachable,
+    varint::ToVarint,
+    Storage, StorageReachable,
 };
 
-use super::{
-    branch_id_creation,
-    compare_by::OrderByFirst,
+use crate::{
+    make_path, split_id,
+    structure::Inner,
     tree_traits::{
         Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue, Zero,
     },
-    LongLatTree, RootTreeInfo, StoredTree,
 };
 
 impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
-    for LongLatTree<DIMENSION_COUNT, Key, Value>
+    for crate::structure::Inner<DIMENSION_COUNT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
     for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    type ExternalData<'a> = <Value as SerializeMinimal>::ExternalData<'a>;
+    type ExternalData<'s> = <Value as SerializeMinimal>::ExternalData<'s>;
 
-    fn minimally_serialize<'o, 's: 'o, W: std::io::Write>(
-        &'o self,
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
+        self.children.len().write_varint(write_to)?;
 
-        let header = (self.children.len() << 1) | (self.left_right_split.is_some() as usize);
+        let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
+        for (bbox, child) in self.children.iter() {
+            let offset = Key::delta_from_self(bbox, &last_bbox);
 
-        header.write_varint(write_to)?;
+            offset.minimally_serialize(write_to, ())?;
+            child.minimally_serialize(write_to, external_data)?;
 
-        if !self.children.is_empty() {
-            let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
-
-            for (bbox, child) in self.children.iter() {
-                let offset = Key::delta_from_self(bbox, &last_bbox);
-
-                offset.minimally_serialize(write_to, ())?;
-                child.minimally_serialize(write_to, external_data)?;
-
-                last_bbox = bbox.to_owned();
-            }
+            last_bbox = bbox.to_owned();
         }
 
         Ok(())
@@ -56,31 +46,19 @@ where
 }
 
 impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
-    for LongLatTree<DIMENSION_COUNT, Key, Value>
+    for crate::structure::Inner<DIMENSION_COUNT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
     for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    type ExternalData<'a> = &'a (RootTreeInfo, u64, Key::Parent);
+    type ExternalData<'d> = &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent;
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
-        external_data: Self::ExternalData<'d>,
+        bbox: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        let (ref root_tree_info, id, bbox) = external_data;
-
-        let header = usize::from_varint(from)?;
-
-        let child_len = header >> 1;
-        let has_left_right = (header & 1) == 1;
-
-        let axis_index = (u64::BITS - id.leading_zeros()).checked_sub(1).unwrap() as usize % DIMENSION_COUNT;
-
-        let axis =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::from_index(
-                axis_index,
-            );
+        let child_len = usize::deserialize_minimal(from, ())?;
 
         let mut children = BTreeVec::with_capacity(child_len);
 
@@ -98,65 +76,143 @@ where
             children.push(delt_bbox, item);
         }
 
-        let left_right_split = if has_left_right {
-            let (left_path, left_id) = branch_id_creation(&root_tree_info, *id, 0);
-            let (right_path, right_id) = branch_id_creation(&root_tree_info, *id, 1);
-
-            let (left_bbox, right_bbox) = bbox.split_evenly_on_dimension(&axis);
-
-            let left_data = (Rc::clone(&root_tree_info), left_id, left_bbox);
-            let right_data = (Rc::clone(&root_tree_info), right_id, right_bbox);
-
-            Some((
-                StoredTree::<DIMENSION_COUNT, Key, Value>::open(left_path, left_data),
-                StoredTree::<DIMENSION_COUNT, Key, Value>::open(right_path, right_data),
-            ))
-        } else {
-            None
-        };
-
-        Ok(Self {
-            root_tree_info: Rc::clone(&external_data.0),
-            bbox: bbox.clone(),
-            direction: axis,
-            children,
-            left_right_split,
-            id: external_data.1,
-        })
+        Ok(Self { children })
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> StorageReachable<(RootTreeInfo, u64, Key::Parent)>
-    for LongLatTree<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, Key, Value>
+    StorageReachable<<Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent>
+    for crate::structure::Inner<DIMENSION_COUNT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
     for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    fn flush_children<'a>(
-        &'a mut self,
-        serialize_data: <Self as SerializeMinimal>::ExternalData<'a>,
+}
+
+impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
+    for crate::structure::Root<DIMENSION_COUNT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
+{
+    type ExternalData<'d> = &'d PathBuf;
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        let root_bbox: Key::Parent = DeserializeFromMinimal::deserialize_minimal(from, ())?;
+
+        let node = DeserializeFromMinimal::deserialize_minimal(
+            from,
+            (external_data, 1, root_bbox.clone(), Default::default()),
+        )?;
+
+        Ok(Self { root_bbox, node })
+    }
+}
+
+impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
+    for crate::structure::Root<DIMENSION_COUNT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
+{
+    type ExternalData<'d> = ();
+
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        _external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        let mut stack = VecDeque::new();
+        self.root_bbox.minimally_serialize(write_to, ())?;
 
-        if let Some((l, r)) = &mut self.left_right_split {
-            stack.push_back(l);
-            stack.push_back(r);
-        }
+        self.node.minimally_serialize(write_to, ())?;
 
-        while let Some(item) = stack.pop_front() {
-            if let Some(result) = item.flush_without_children(serialize_data) {
-                result?;
+        Ok(())
+    }
+}
+
+impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
+    for crate::structure::Node<DIMENSION_COUNT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
+{
+    type ExternalData<'d> = (
+        &'d PathBuf,
+        u64,
+        Key::Parent,
+        <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
+    );
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        (root_path, id, parent, direction): Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        let has_split = u8::deserialize_minimal(from, ())? != 0;
+
+        let left_right_split = if has_split {
+            let (left_id, right_id) = split_id(id);
+
+            let (left_bbox, right_bbox) = parent.split_evenly_on_dimension(&direction);
+            let next_dir = direction.next_axis();
+
+            Some((
+                Box::new(Self::deserialize_minimal(
+                    from,
+                    (root_path, left_id, left_bbox, next_dir),
+                )?),
+                Box::new(Self::deserialize_minimal(
+                    from,
+                    (root_path, right_id, right_bbox, next_dir),
+                )?),
+            ))
+        } else {
+            None
+        };
+
+        let path = make_path(root_path, id);
+
+        Ok(Self {
+            bbox: parent.clone(),
+            values: Storage::<
+                <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent,
+                Inner<DIMENSION_COUNT, Key, Value>,
+            >::open(path, parent),
+            left_right_split,
+            id,
+        })
+    }
+}
+
+impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
+    for crate::structure::Node<DIMENSION_COUNT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
+{
+    type ExternalData<'d> = ();
+
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        match &self.left_right_split {
+            Some((l, r)) => {
+                (1u8).minimally_serialize(write_to, ())?;
+
+                l.minimally_serialize(write_to, external_data)?;
+                r.minimally_serialize(write_to, external_data)?;
             }
-
-            if let Some((l, r)) = &mut item.ref_mut().left_right_split {
-                if l.is_dirty() {
-                    stack.push_back(l);
-                }
-
-                if r.is_dirty() {
-                    stack.push_back(r);
-                }
+            None => {
+                (0u8).minimally_serialize(write_to, ())?;
             }
         }
 

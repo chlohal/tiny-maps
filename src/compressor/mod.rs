@@ -1,8 +1,5 @@
 use std::{
-    collections::VecDeque,
-    fs::{create_dir_all, File},
-    io::{self, BufWriter},
-    path::PathBuf,
+    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, ops::{Range, RangeInclusive}, path::PathBuf
 };
 
 use compressed_data::{flattened_id, unflattened_id, CompressedOsmData, UncompressedOsmData};
@@ -12,7 +9,7 @@ use osmpbfreader::{OsmId, OsmObj};
 use tree::{
     bbox::{BoundingBox, EARTH_BBOX},
     open_tree,
-    point_range::{DisregardWhenDeserializing, Point, PointRange},
+    point_range::DisregardWhenDeserializing,
     StoredPointTree, StoredTree,
 };
 
@@ -22,7 +19,7 @@ pub mod types;
 
 pub struct Compressor {
     values: (LiteralPool<Literal>, LiteralPool<LiteralValue>),
-    pub cache_bboxes: StoredPointTree<1, Point<u64>, BoundingBox<i32>>,
+    pub cache_bboxes: StoredPointTree<1, u64, BoundingBox<i32>>,
     pub geography: StoredTree<2, BoundingBox<i32>, UncompressedOsmData>,
     queue_to_handle_at_end: VecDeque<OsmObj>,
 }
@@ -41,12 +38,12 @@ impl Compressor {
 
         let mut cache_bboxes = open_tree::<
             1,
-            Point<u64>,
-            DisregardWhenDeserializing<Point<u64>, BoundingBox<i32>>,
-        >(state_path.join("tmp.bboxes"), PointRange(0, u64::MAX));
+            u64,
+            DisregardWhenDeserializing<u64, BoundingBox<i32>>,
+        >(state_path.join("tmp.bboxes"), 0..=u64::MAX);
 
-        geography.ref_mut().expand_to_depth(5);
-        cache_bboxes.ref_mut().expand_to_depth(5);
+        geography.expand_to_depth(5);
+        cache_bboxes.expand_to_depth(5);
 
         Compressor {
             values: (
@@ -61,19 +58,17 @@ impl Compressor {
     pub fn get_element_bbox(&self, id: &OsmId) -> Option<&BoundingBox<i32>> {
         let f = self
             .cache_bboxes
-            .deref()
-            .find_first_item_at_key_exact(&Point(flattened_id(id)))
+            .find_first_item_at_key_exact(&flattened_id(id))
             .map(|x| x.inner());
         f
     }
     pub fn get_elements_bbox_in_range<'a>(
         &'a self,
-        range: &'a PointRange<u64>,
+        range: &'a RangeInclusive<u64>,
     ) -> impl Iterator<Item = (OsmId, &'a BoundingBox<i32>)> + 'a {
         self.cache_bboxes
-            .deref()
             .find_entries_in_box(range)
-            .map(|(Point(id), bbox)| (unflattened_id(id), bbox.inner()))
+            .map(|(id, bbox)| (unflattened_id(id), bbox.inner()))
     }
     pub fn write_element(&mut self, element: OsmObj) {
         let data = CompressedOsmData::make_from_obj(element, &mut self.cache_bboxes);
@@ -90,12 +85,12 @@ impl Compressor {
 
         let data = UncompressedOsmData::new(&data, &mut self.values);
 
-        self.geography.ref_mut().insert(bbox, data)
+        self.geography.insert(bbox, data)
     }
 
     pub fn flush_to_storage(&mut self) -> Result<(), io::Error> {
-        self.geography.flush(()).unwrap()?;
-        self.cache_bboxes.flush(()).unwrap()?;
+        self.geography.flush(()).unwrap();
+        self.cache_bboxes.flush(()).unwrap();
 
         self.values.0.flush()?;
         self.values.1.flush()?;

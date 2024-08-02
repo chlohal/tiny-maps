@@ -29,6 +29,10 @@ impl<K: Ord, V> BTreeVec<K, V> {
         }
     }
 
+    pub fn get<'a, 'b>(&'a self, key: &'b K) -> Option<&'a NonEmptyUnorderVec<V>> {
+        self.0.get(key)
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

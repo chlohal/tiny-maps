@@ -139,7 +139,7 @@ macro_rules! impl_to_be_bytes_signed_zigzag {
 }
 
 impl_to_varint! {u8, u16, u32, u64, u128, usize}
-impl_to_be_bytes_signed_zigzag! {i8 => u8, i16 => u16, i32 => u32, i64 => u64, i128 => u128}
+impl_to_be_bytes_signed_zigzag! {i8 => u8, i16 => u16, i32 => u32, i64 => u64, i128 => u128, isize => usize}
 
 #[cfg(test)]
 mod tests {
