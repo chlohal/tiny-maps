@@ -58,22 +58,21 @@ macro_rules! impl_to_varint {
 
                 shift = (shift / bits_per_byte) * bits_per_byte;
 
-                let mut mask: $typ = 0b_111_1111 << shift;
+                
 
                 loop {
+                    let mask: $typ = 0b_111_1111 << shift;
                     let byte = (self & mask) >> shift;
-                    mask >>= bits_per_byte;
-                    shift = shift.saturating_sub(bits_per_byte);
 
-                    if mask == 0 {
+                    if shift == 0 {
                         to.write_all(&[(byte as u8)])?;
-                        break;
+                        return Ok(());
                     } else {
+                        shift = shift.saturating_sub(bits_per_byte);
+                        
                         to.write_all(&[(byte as u8) | flag_more])?;
                     }
                 }
-
-                Ok(())
             }
         }
         impl FromVarint for $typ {
@@ -84,20 +83,17 @@ macro_rules! impl_to_varint {
 
                 let mut value = 0;
 
-                for byte in bytes.reading_iterator() {
-                    let byte = byte?;
+                loop {
+                    let byte = bytes.read_one()?;
 
                     //apply byte, without value of flag
                     value |= (byte & !flag_more) as $typ;
 
                     if (flag_more & byte) == 0 {
                         return Ok(value);
-                    } else {
-                        value <<= shift;
                     }
+                    value <<= shift;
                 }
-
-                return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
         }
     )*
@@ -165,6 +161,33 @@ mod tests {
 
         let mut to = &to_varint(value)[..];
         assert_eq!(from_varint::<u64>(&mut to).unwrap(), value);
+    }
+
+    #[test]
+    fn minmax() {
+        macro_rules! make_limit_test {
+            ($val:expr, $($t:tt)*) => {
+                {
+                    let value = $val;
+                    let to = to_varint(value);
+                    let out = from_varint(&mut &to[..]).unwrap();
+                    if(value != out) {
+                        eprintln!("{:?}", to);
+                        assert_eq!(value, out, $($t)*);
+                    }
+                }
+            };
+        }
+
+        macro_rules! make_minmax_test {
+            ($( $typ:ty ),*) => {
+                $(
+                    make_limit_test!(<$typ>::MAX, "maximum of {} should survive roundtrip varints", stringify!($typ));
+                    make_limit_test!(<$typ>::MIN, "minimum of {} should survive roundtrip varints", stringify!($typ));
+                )*
+            };
+        }
+        make_minmax_test!(u8, i8, u16, i16, u32, i32, u64, i64);
     }
 
     #[test]

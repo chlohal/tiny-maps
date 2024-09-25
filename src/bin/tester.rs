@@ -1,22 +1,18 @@
-use std::{env, fs::File};
+use minimal_storage::paged_storage::{PageId, PagedStorage};
+use tree::{bbox::BoundingBox, open_tree, point_range::DisregardWhenDeserializing};
 
-use minimal_storage::{serialize_min::DeserializeFromMinimal, varint::from_varint};
-use offline_tiny_maps::compressor::compressed_data::UncompressedOsmData;
+use tree::structure::TreePagedStorage;
 
-use tree::bbox::{BoundingBox, DeltaFriendlyU32Offset};
 
 fn main() {
-    let mut file = File::open(env::current_dir().unwrap().join(".map/geography/30")).unwrap();
-    
-    let num: usize = from_varint(&mut file).unwrap();
+    tree()
+}
 
-    dbg!(num);
+fn tree() {
+    let mut tree = open_tree::<1, u64, DisregardWhenDeserializing<u64, BoundingBox<u32>>>(
+        std::env::current_dir().unwrap().join(".map/tmp.bboxes"),
+        0..=u64::MAX,
+    );
 
-    for _ in 0..num {
-        let dfuo = DeltaFriendlyU32Offset::deserialize_minimal(&mut file, ()).unwrap();
-
-        let data = UncompressedOsmData::deserialize_minimal(&mut file, &BoundingBox::empty()).unwrap();
-        
-        println!("reading node 0x30 {:?}", (&dfuo, &data));
-    }
+    dbg!(tree.find_first_item_at_key_exact(&24418126920));
 }

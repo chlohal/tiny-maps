@@ -1,12 +1,12 @@
 use osmpbfreader::Tags;
 
 use osm_literals::{
-    literal_value::LiteralValue, structured_elements::{
-        address::OsmAddress, contact::OsmContactInfo
-    }, literal::{Literal, WellKnownKeyVar::Address}, 
+    literal::{Literal, WellKnownKeyVar::Address},
+    literal_value::LiteralValue,
+    structured_elements::{address::OsmAddress, contact::OsmContactInfo},
 };
 
-use super::{InlinedTags, TagCollection};
+use super::{remove_non_stored_tags, InlinedTags, TagCollection};
 
 #[derive(Clone, Debug)]
 pub struct Node {
@@ -69,7 +69,7 @@ pub enum NodeSingleInlined {
 }
 
 pub fn inline_node_tags(mut tags: Tags) -> InlinedTags<Node> {
-    tags.remove("source");
+    remove_non_stored_tags(&mut tags);
 
     if tags.len() == 1 {
         let only_tag = tags.iter().next().unwrap();
@@ -119,7 +119,11 @@ pub fn inline_node_tags(mut tags: Tags) -> InlinedTags<Node> {
     //add contact address, if it's encoded differently.
     //this will almost always be a karlsruhle minimal address
     //(and usually in France)
-    additional.extend(OsmAddress::make_from_tags(&mut tags, "contact").as_option().map(Into::into));
+    additional.extend(
+        OsmAddress::make_from_tags(&mut tags, "contact")
+            .as_option()
+            .map(Into::into),
+    );
 
     let (contact, other_contact) = {
         let contact_no_prefix = OsmContactInfo::make_from_tags(&mut tags, "").as_option();

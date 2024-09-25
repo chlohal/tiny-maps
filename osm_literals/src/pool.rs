@@ -1,16 +1,17 @@
 use std::{io::Write, marker::PhantomData};
 
+use lru_cache::TopNHeap;
 use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use sha2::{Digest, Sha256};
 
-use crate::{aux::topn::TopNHeap, literal::Literal, literal_value::LiteralValue, INLINING_AS_ID_THRESHOLD_BYTES};
+use crate::{literal::Literal, literal_value::LiteralValue, INLINING_AS_ID_THRESHOLD_BYTES};
 
 pub type LiteralId = u64;
 
 pub struct LiteralPool<T: SerializeMinimal> {
     value_count: usize,
     destination: Box<dyn Write>,
-    recent_writes: TopNHeap<300, [u8; 32], usize>,
+    recent_writes: TopNHeap<3000, [u8; 32], usize>,
     __phantom: PhantomData<T>,
 }
 

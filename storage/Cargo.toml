@@ -3,6 +3,13 @@ name = "minimal_storage"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["compression"]
+compression = ["dep:zstd"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lru_cache = { path = "../lru_cache" }
+parking_lot = "0.12.3"
+zstd = { version = "0.13", optional = true }

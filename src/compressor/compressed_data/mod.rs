@@ -1,34 +1,50 @@
 use node::{osm_node_to_compressed_node, serialize_node};
-use osmpbfreader::{NodeId, OsmId, OsmObj, RelationId, WayId};
-use relation::osm_relation_to_compressed_node;
-use way::osm_way_to_compressed_node;
+use osmpbfreader::{NodeId, OsmId, OsmObj, Ref, RelationId, WayId};
+use relation::{osm_relation_to_compressed_node, serialize_relation};
+use way::{osm_way_to_compressed_node, serialize_way};
 
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree, StoredPointTree};
 
-use minimal_storage::{serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal}, varint::{from_varint, to_varint, ToVarint}};
+use minimal_storage::{
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    varint::{from_varint, ToVarint},
+};
 
-use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
+use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 
-use super::tag_compressing::{node::Node, InlinedTags};
+use super::tag_compressing::{node::Node, relation::Relation, way::Way, InlinedTags};
 
 mod node;
-mod way;
 mod relation;
-
+mod way;
 
 #[derive(Clone, Debug)]
 pub enum CompressedOsmData {
-    Node{ id: NodeId, tags: InlinedTags<Node>, point: BoundingBox<i32> },
-    Way{ bbox: BoundingBox<i32>, id: WayId },
-    Relation{ bbox: BoundingBox<i32>, id: RelationId }
+    Node {
+        id: NodeId,
+        tags: InlinedTags<Node>,
+        point: BoundingBox<i32>,
+    },
+    Way {
+        bbox: BoundingBox<i32>,
+        id: WayId,
+        tags: InlinedTags<Way>,
+        children: Vec<u64>,
+    },
+    Relation {
+        bbox: BoundingBox<i32>,
+        id: RelationId,
+        refs: Vec<Ref>,
+        tags: InlinedTags<Relation>,
+    },
 }
 
 impl CompressedOsmData {
     pub fn bbox(&self) -> &BoundingBox<i32> {
         match self {
             CompressedOsmData::Node { point, .. } => point,
-            CompressedOsmData::Way{ bbox, .. } => bbox,
-            CompressedOsmData::Relation{ bbox, .. } => bbox,
+            CompressedOsmData::Way { bbox, .. } => bbox,
+            CompressedOsmData::Relation { bbox, .. } => bbox,
         }
     }
 
@@ -40,7 +56,10 @@ impl CompressedOsmData {
         }
     }
 
-    pub fn make_from_obj(value: OsmObj, bbox_cache: &mut StoredPointTree<1, u64, BoundingBox<i32>>) -> Result<Self, OsmObj> {
+    pub fn make_from_obj(
+        value: OsmObj,
+        bbox_cache: &mut StoredPointTree<1, u64, BoundingBox<i32>>,
+    ) -> Result<Self, OsmObj> {
         let value = match value {
             OsmObj::Node(n) => osm_node_to_compressed_node(n),
             OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache),
@@ -80,12 +99,15 @@ pub fn unflattened_id(id: u64) -> OsmId {
         0 => OsmId::Node(NodeId(id)),
         1 => OsmId::Way(WayId(id)),
         2 => OsmId::Relation(RelationId(id)),
-        _ => panic!("Bad variant!")
+        _ => panic!("Bad variant!"),
     }
 }
 
-
-fn insert_bbox(id: &OsmId, bbox: BoundingBox<i32>, bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>) {
+fn insert_bbox(
+    id: &OsmId,
+    bbox: BoundingBox<i32>,
+    bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>,
+) {
     let inner = flattened_id(id);
 
     bbox_cache.insert(&inner, bbox.into());
@@ -94,13 +116,10 @@ fn insert_bbox(id: &OsmId, bbox: BoundingBox<i32>, bbox_cache: &mut StoredBinary
 impl DeserializeFromMinimal for CompressedOsmData {
     type ExternalData<'a> = &'a BoundingBox<i32>;
 
-    
-
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
-        let header = from.read_one()?;
-
-        let is_node = (header & 0b1000_0000) != 0;
-
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        _from: &'a mut R,
+        _external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
         todo!()
     }
 }
@@ -108,11 +127,27 @@ impl DeserializeFromMinimal for CompressedOsmData {
 impl SerializeMinimal for CompressedOsmData {
     type ExternalData<'a> = &'a mut (LiteralPool<Literal>, LiteralPool<LiteralValue>);
 
-    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
         match self {
-            CompressedOsmData::Node { id, tags, point } => serialize_node(write_to, external_data, id, tags, point),
-            CompressedOsmData::Way{ .. } => Ok(()), //todo
-            CompressedOsmData::Relation{ .. } => Ok(()), //todo
+            CompressedOsmData::Node { id, tags, .. } => {
+                serialize_node(write_to, external_data, id, tags)
+            }
+            CompressedOsmData::Way {
+                id,
+                bbox: _,
+                tags,
+                children,
+            } => serialize_way(write_to, external_data, id, tags, children),
+            CompressedOsmData::Relation {
+                bbox: _,
+                id,
+                refs,
+                tags,
+            } => serialize_relation(write_to, external_data, id, tags, refs),
         }
     }
 }
@@ -121,7 +156,10 @@ impl SerializeMinimal for CompressedOsmData {
 pub struct UncompressedOsmData(Vec<u8>);
 
 impl UncompressedOsmData {
-    pub fn new(data: &CompressedOsmData, pool: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>)) -> Self {
+    pub fn new(
+        data: &CompressedOsmData,
+        pool: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+    ) -> Self {
         let mut blob = Vec::new();
         data.minimally_serialize(&mut blob, pool).unwrap();
 
@@ -132,7 +170,11 @@ impl UncompressedOsmData {
 impl SerializeMinimal for UncompressedOsmData {
     type ExternalData<'a> = ();
 
-    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, _external_data: ()) -> std::io::Result<()> {
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        _external_data: (),
+    ) -> std::io::Result<()> {
         (self.0.len() as usize).write_varint(write_to)?;
 
         write_to.write_all(&self.0)
@@ -141,8 +183,11 @@ impl SerializeMinimal for UncompressedOsmData {
 
 impl DeserializeFromMinimal for UncompressedOsmData {
     type ExternalData<'a> = &'a BoundingBox<i32>;
-    
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, _external_data: &'a BoundingBox<i32>) -> Result<Self, std::io::Error> {
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        _external_data: &'a BoundingBox<i32>,
+    ) -> Result<Self, std::io::Error> {
         let len = from_varint::<usize>(from)?;
 
         let mut vec = vec![0; len];

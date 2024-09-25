@@ -6,5 +6,11 @@ mod primitive_serialization;
 
 pub mod serialize_min;
 pub mod varint;
+pub mod paged_storage;
+
+pub mod cache;
 
 pub use storage::*;
+
+#[cfg(feature = "compression")]
+pub mod compression;

@@ -6,7 +6,7 @@ edition = "2021"
 default-run = "main"
 
 [workspace]
-members = [ "btree_vec", "lutmorton", "osm_literals","storage", "tree"]
+members = [ "btree_vec", "lru_cache", "lutmorton", "osm_literals","storage", "tree"]
 
 
 [dependencies]

@@ -16,11 +16,11 @@ pub fn test() {
         t.insert(&i, i.into());
     }
 
-    t.flush(()).unwrap();
+    t.flush().unwrap();
 
     let mut found: usize = 0;
 
-    for itm in t.find_entries_in_box(&(0..=high)) {
+    for itm in t.iter() {
         found += 1;
         dbg!(itm.0, itm.1.inner());
 
@@ -30,9 +30,9 @@ pub fn test() {
     assert_eq!(found, high as usize);
 
     for i in 0..high {
-        let stored_i = t.find_first_item_at_key_exact(&i).unwrap().inner();
+        let stored_i = t.find_first_item_at_key_exact(&i).unwrap().into_inner();
 
-        assert_eq!(i, *stored_i);
+        assert_eq!(i, stored_i);
     }
 
     std::fs::remove_dir_all(folder).unwrap();

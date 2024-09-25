@@ -1,6 +1,6 @@
 use std::{
     marker::PhantomData,
-    ops::{Add, RangeInclusive, Sub},
+    ops::{Add, Deref, DerefMut, RangeInclusive, Sub},
 };
 
 use minimal_storage::{
@@ -14,6 +14,7 @@ use super::tree_traits::{Average, MultidimensionalKey, MultidimensionalParent, Z
 
 pub type StoredBinaryTree<K, T> = LongLatTree<1, K, DisregardWhenDeserializing<K, T>>;
 
+#[repr(transparent)]
 pub struct DisregardWhenDeserializing<Disregard, T>(T, PhantomData<Disregard>);
 
 impl<Disregard, T: std::fmt::Debug> std::fmt::Debug for DisregardWhenDeserializing<Disregard, T> {
@@ -37,6 +38,20 @@ impl<Disregard, T: Clone> Clone for DisregardWhenDeserializing<Disregard, T> {
     }
 }
 
+impl<Disregard, T> Deref for DisregardWhenDeserializing<Disregard, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Disregard, T> DerefMut for DisregardWhenDeserializing<Disregard, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<Disregard, T> From<T> for DisregardWhenDeserializing<Disregard, T> {
     fn from(value: T) -> Self {
         DisregardWhenDeserializing(value, PhantomData)
@@ -47,6 +62,9 @@ impl<Disregard, T: Copy> Copy for DisregardWhenDeserializing<Disregard, T> {}
 
 impl<Disregard: 'static, T: DeserializeFromMinimal<ExternalData<'static> = ()>>
     DeserializeFromMinimal for DisregardWhenDeserializing<Disregard, T>
+where
+    T: Sized,
+    DisregardWhenDeserializing<Disregard, T>: Sized,
 {
     type ExternalData<'d> = &'d Disregard;
 
@@ -54,10 +72,9 @@ impl<Disregard: 'static, T: DeserializeFromMinimal<ExternalData<'static> = ()>>
         from: &'a mut R,
         _external_data: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        Ok(DisregardWhenDeserializing(
-            T::deserialize_minimal(from, ())?,
-            PhantomData,
-        ))
+        let inner = T::deserialize_minimal(from, ());
+
+        return inner.map(|x| DisregardWhenDeserializing(x, PhantomData));
     }
 }
 
@@ -116,19 +133,16 @@ impl<T: OneDimensionalCoord> MultidimensionalParent<1> for RangeInclusive<T> {
     fn split_evenly_on_dimension(&self, _dimension: &()) -> (Self, Self) {
         let middle = Average::avg(*self.start(), *self.end());
 
-        (
-            (*self.start())..=middle,
-            middle..=(*self.end())
-        )
+        ((*self.start())..=middle, middle..=(*self.end()))
     }
 }
 
 impl<T: OneDimensionalCoord> MultidimensionalKey<1> for T {
     type Parent = RangeInclusive<T>;
 
-    type DeltaFromParent = T;
+    type DeltaFromParent = Self;
 
-    type DeltaFromSelf = T;
+    type DeltaFromSelfAsChild = Self;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool {
         parent.start() <= self && self <= parent.end()
@@ -145,12 +159,12 @@ impl<T: OneDimensionalCoord> MultidimensionalKey<1> for T {
     fn delta_from_self(
         finl: &Self::DeltaFromParent,
         initil: &Self::DeltaFromParent,
-    ) -> Self::DeltaFromSelf {
+    ) -> Self::DeltaFromSelfAsChild {
         *finl - *initil
     }
 
     fn apply_delta_from_self(
-        delta: &Self::DeltaFromSelf,
+        delta: &Self::DeltaFromSelfAsChild,
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent {
         *initial + *delta

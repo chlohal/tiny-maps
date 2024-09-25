@@ -20,7 +20,7 @@ pub enum StringSerialVariation {
     Unicode,
 }
 
-impl SerializeMinimal for String {
+impl SerializeMinimal for &str {
     type ExternalData<'a> = (&'a mut StringSerialVariation, &'a mut u8);
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(

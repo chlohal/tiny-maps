@@ -27,19 +27,16 @@ pub fn serialize_node<W: std::io::Write>(
     external_data: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
     id: &NodeId,
     tags: &InlinedTags<tag_compressing::node::Node>,
-    point: &BoundingBox<i32>,
 ) -> Result<(), std::io::Error> {
     if tags.other.is_empty() && tags.inline.is_single() {
-        return write_node_only_single_inlined_tags(write_to, external_data, point, tags.inline.single.clone(), id);
+        return write_node_only_single_inlined_tags(write_to, tags.inline.single.clone(), id);
     }
 
-    write_node_with_uninlined_tags(write_to, external_data, point, tags)
+    write_node_with_uninlined_tags(write_to, external_data, tags)
 }
 
 pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
     write_to: &mut W,
-    values: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
-    point_bbox: &BoundingBox<i32>,
     tag: Option<NodeSingleInlined>,
     id: &NodeId,
 ) -> std::io::Result<()> {
@@ -73,7 +70,6 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
 fn write_node_with_uninlined_tags<W: std::io::Write>(
     write_to: &mut W,
     values: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
-    point_bbox: &BoundingBox<i32>,
     tags: &InlinedTags<tag_compressing::node::Node>,
 ) -> std::io::Result<()> {
     //header layout:

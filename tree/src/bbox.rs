@@ -38,7 +38,8 @@ impl FromIterator<(i32, i32)> for BoundingBox<i32> {
 
 impl FromIterator<BoundingBox<i32>> for BoundingBox<i32> {
     fn from_iter<I: IntoIterator<Item = BoundingBox<i32>>>(iter: I) -> Self {
-        iter.into_iter().map(|x| [(x.x, x.y), (x.x_end, x.y_end)])
+        iter.into_iter()
+            .map(|x| [(x.x, x.y), (x.x_end, x.y_end)])
             .flatten()
             .collect()
     }
@@ -165,11 +166,7 @@ impl BoundingBox<i32> {
 
         let xy = lutmorton::morton(x, y);
 
-        DeltaBoundingBox32 {
-            xy,
-            width,
-            height,
-        }
+        DeltaBoundingBox32 { xy, width, height }
     }
 
     #[inline]
@@ -232,7 +229,7 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
     type Parent = BoundingBox<i32>;
 
     type DeltaFromParent = DeltaBoundingBox32;
-    type DeltaFromSelf = DeltaFriendlyU32Offset;
+    type DeltaFromSelfAsChild = DeltaFriendlyU32Offset;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool {
         parent.contains(self)
@@ -245,7 +242,7 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
     fn delta_from_self(
         finl: &Self::DeltaFromParent,
         initil: &Self::DeltaFromParent,
-    ) -> Self::DeltaFromSelf {
+    ) -> Self::DeltaFromSelfAsChild {
         finl.delta_friendly_offset(initil)
     }
 
@@ -254,7 +251,7 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
     }
 
     fn apply_delta_from_self(
-        delta: &Self::DeltaFromSelf,
+        delta: &Self::DeltaFromSelfAsChild,
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent {
         DeltaBoundingBox32::from_delta_friendly_offset(delta, initial)
@@ -272,8 +269,7 @@ impl Zero for DeltaBoundingBox32 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DeltaBoundingBox32
-{
+pub struct DeltaBoundingBox32 {
     xy: u64,
     width: u32,
     height: u32,
@@ -301,11 +297,7 @@ impl Ord for DeltaBoundingBox32 {
 
 impl DeltaBoundingBox32 {
     pub fn delta_friendly_offset(&self, initial: &Self) -> DeltaFriendlyU32Offset {
-        DeltaFriendlyU32Offset(
-            self.xy - initial.xy,
-            self.width,
-            self.height,
-        )
+        DeltaFriendlyU32Offset(self.xy - initial.xy, self.width, self.height)
     }
 
     pub fn from_delta_friendly_offset(
@@ -334,7 +326,7 @@ impl DeltaBoundingBox32 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DeltaFriendlyU32Offset(u64, u32, u32);
 
 impl Zero for DeltaFriendlyU32Offset {
@@ -353,14 +345,16 @@ impl SerializeMinimal for DeltaFriendlyU32Offset {
     ) -> std::io::Result<()> {
         let DeltaFriendlyU32Offset(mortoned, width, height) = self;
         let is_point = *width == 0 && *height == 0;
+        let is_fully_packed = mortoned.leading_zeros() >= 2;
 
-        if mortoned & (1 << 63) != 0 {
-            panic!("Huge mortoned coordinate; no extra bit to encode point-ness");
+        if is_fully_packed {
+            let header = (mortoned << 2) | (is_point as u64) << 1 | 1;
+            header.write_varint(write_to)?;
+        } else {
+            let point_header = ((is_point as u8) << 1) | 0;
+            point_header.write_varint(write_to)?;
+            mortoned.write_varint(write_to)?;
         }
-
-        let header = (mortoned << 1) | (is_point as u64);
-
-        header.write_varint(write_to)?;
 
         if !is_point {
             width.minimally_serialize(write_to, ())?;
@@ -380,9 +374,15 @@ impl DeserializeFromMinimal for DeltaFriendlyU32Offset {
     ) -> Result<Self, std::io::Error> {
         let header = u64::deserialize_minimal(from, external_data)?;
 
-        let is_point = (header & 1) == 1;
+        let is_fully_packed = (header & 1) == 1;
 
-        let xy = header >> 1;
+        let is_point = (header & 0b10) == 0b10;
+
+        let xy = if is_fully_packed {
+            header >> 2
+        } else {
+            u64::deserialize_minimal(from, external_data)?
+        };
 
         let (width, height) = if !is_point {
             (
@@ -428,6 +428,8 @@ impl Default for LongLatSplitDirection {
 
 #[cfg(test)]
 mod test {
+    use minimal_storage::serialize_min::assert_serialize_roundtrip;
+
     use super::*;
 
     #[test]
@@ -445,5 +447,12 @@ mod test {
             y_end: -1,
         };
         assert!(big.contains(&small));
+    }
+
+    #[test]
+    pub fn deser_delta_u32_bb() {
+        let b = DeltaFriendlyU32Offset(u64::MAX >> 1, 2, 1);
+
+        assert_serialize_roundtrip(b, (), ());
     }
 }

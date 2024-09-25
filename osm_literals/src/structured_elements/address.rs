@@ -117,7 +117,7 @@ impl OsmAddress {
 impl DeserializeFromMinimal for OsmAddress {
     type ExternalData<'d> = ();
 
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(_from: &'a mut R, _external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
         todo!()
     }
 }

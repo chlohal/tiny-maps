@@ -155,7 +155,7 @@ impl SerializeMinimal for LiteralValue {
                 let mut variety = StringSerialVariation::Unicode;
                 let mut low_nibble = 0;
 
-                s.minimally_serialize(&mut buf, (&mut variety, &mut low_nibble))?;
+                s.as_str().minimally_serialize(&mut buf, (&mut variety, &mut low_nibble))?;
 
                 ((0b11_00 + string_value_enum_offset(variety)) << 4) | low_nibble
 

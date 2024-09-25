@@ -1,12 +1,8 @@
 [package]
-name = "osm_literals"
+name = "lru_cache"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-minimal_storage = { path = "../storage" }
-lru_cache = { path = "../lru_cache" }
-osmpbfreader = "0.16.1"
-sha2 = "0.10.8"

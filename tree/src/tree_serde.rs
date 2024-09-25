@@ -2,27 +2,22 @@ use std::path::PathBuf;
 
 use btree_vec::BTreeVec;
 use minimal_storage::{
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
-    varint::ToVarint,
-    Storage, StorageReachable,
+    paged_storage::PageId, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::ToVarint, StorageReachable
 };
 
 use crate::{
-    make_path, split_id,
-    structure::Inner,
-    tree_traits::{
+    split_id, structure::Inner, tree_traits::{
         Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue, Zero,
-    },
+    }
 };
 
 impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
-    for crate::structure::Inner<DIMENSION_COUNT, Key, Value>
+    for Inner<DIMENSION_COUNT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
-    type ExternalData<'s> = <Value as SerializeMinimal>::ExternalData<'s>;
+    type ExternalData<'s> = ();
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
         &'a self,
@@ -33,6 +28,8 @@ where
 
         let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
         for (bbox, child) in self.children.iter() {
+            debug_assert!(*bbox >= last_bbox);
+
             let offset = Key::delta_from_self(bbox, &last_bbox);
 
             offset.minimally_serialize(write_to, ())?;
@@ -46,11 +43,10 @@ where
 }
 
 impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
-    for crate::structure::Inner<DIMENSION_COUNT, Key, Value>
+    for Inner<DIMENSION_COUNT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
     type ExternalData<'d> = &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent;
 
@@ -65,7 +61,8 @@ where
         let mut last_bbox = Key::DeltaFromParent::zero();
 
         for _ in 0..child_len {
-            let delt_delt_bbox = Key::DeltaFromSelf::deserialize_minimal(from, ())?;
+            let delt_delt_bbox = Key::DeltaFromSelfAsChild::deserialize_minimal(from, ())?;
+
             let delt_bbox = Key::apply_delta_from_self(&delt_delt_bbox, &last_bbox);
             let abs_bbox = Key::apply_delta_from_parent(&delt_bbox, bbox);
 
@@ -82,11 +79,10 @@ where
 
 impl<const DIMENSION_COUNT: usize, Key, Value>
     StorageReachable<<Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent>
-    for crate::structure::Inner<DIMENSION_COUNT, Key, Value>
+    for Inner<DIMENSION_COUNT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
 }
 
@@ -95,7 +91,6 @@ impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
     type ExternalData<'d> = &'d PathBuf;
 
@@ -119,7 +114,6 @@ impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
     type ExternalData<'d> = ();
 
@@ -141,7 +135,6 @@ impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
     type ExternalData<'d> = (
         &'d PathBuf,
@@ -155,6 +148,7 @@ where
         (root_path, id, parent, direction): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
         let has_split = u8::deserialize_minimal(from, ())? != 0;
+        let page_id = PageId::deserialize_minimal(from, ())?;
 
         let left_right_split = if has_split {
             let (left_id, right_id) = split_id(id);
@@ -176,16 +170,12 @@ where
             None
         };
 
-        let path = make_path(root_path, id);
-
         Ok(Self {
-            bbox: parent.clone(),
-            values: Storage::<
-                <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent,
-                Inner<DIMENSION_COUNT, Key, Value>,
-            >::open(path, parent),
+            bbox: parent,
+            page_id,
             left_right_split,
             id,
+            __phantom: std::marker::PhantomData,
         })
     }
 }
@@ -195,7 +185,6 @@ impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
-    for<'serialize> <Value as SerializeMinimal>::ExternalData<'serialize>: Copy,
 {
     type ExternalData<'d> = ();
 
@@ -207,12 +196,14 @@ where
         match &self.left_right_split {
             Some((l, r)) => {
                 (1u8).minimally_serialize(write_to, ())?;
+                self.page_id.minimally_serialize(write_to, ())?;
 
                 l.minimally_serialize(write_to, external_data)?;
                 r.minimally_serialize(write_to, external_data)?;
             }
             None => {
                 (0u8).minimally_serialize(write_to, ())?;
+                self.page_id.minimally_serialize(write_to, ())?;
             }
         }
 

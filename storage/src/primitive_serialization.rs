@@ -95,3 +95,35 @@ where for<'a> T::ExternalData<'a>: Copy {
         )    
     }
 }
+
+impl<T: SerializeMinimal> SerializeMinimal for Vec<T>
+where for<'a> T::ExternalData<'a>: Copy {
+    type ExternalData<'d> = T::ExternalData<'d>;
+    
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> std::io::Result<()> {
+        self.len().minimally_serialize(write_to, ())?;
+
+        for item in self.iter() {
+            item.minimally_serialize(write_to, external_data)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: DeserializeFromMinimal> DeserializeFromMinimal for Vec<T>
+where for<'a> T::ExternalData<'a>: Copy {
+    type ExternalData<'d> = T::ExternalData<'d>;
+    
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+        let length = usize::deserialize_minimal(from, ())?;
+
+        let mut vec = Vec::with_capacity(length);
+
+        for _ in 0..length {
+            vec.push(T::deserialize_minimal(from, external_data)?);
+        }
+
+        Ok(vec)
+    }
+}

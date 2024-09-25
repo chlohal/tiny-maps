@@ -1,64 +1,116 @@
-use std::collections::{btree_map, BTreeMap};
+use std::{
+    cmp::Ordering,
+    collections::{btree_map, vec_deque, BTreeMap, VecDeque},
+};
 
 use crate::nonempty_vec::NonEmptyUnorderVec;
 
-pub struct BTreeVec<K, V>(BTreeMap<K, NonEmptyUnorderVec<V>>);
+pub struct BTreeVec<K, V> {
+    itms: VecDeque<(K, NonEmptyUnorderVec<V>)>,
+}
 
-impl<K,V> Default for BTreeVec<K,V> {
+impl<K, V> Default for BTreeVec<K, V> {
     fn default() -> Self {
-        Self(Default::default())
+        Self {
+            itms: Default::default(),
+        }
     }
 }
 
-impl<K: Ord, V> BTreeVec<K, V> {
+impl<K: Ord + Clone, V> BTreeVec<K, V> {
     pub fn push(&mut self, key: K, value: V) {
-        let mut key_exists = false;
+        if self.itms.back().is_some_and(|x| key > x.0) {
+            self.itms.push_back((key, NonEmptyUnorderVec::new(value)));
+            return;
+        }
 
-        //use the in-place modification api to record a bool flag so we can make the 
-        //borrow checker happy
-        let entry = self.0.entry(key).and_modify(|_| {
-            key_exists = true;
-        });
-
-        if key_exists {
-            entry.and_modify(|vs| {
-                vs.push(value);
-            });
-        } else {
-            entry.or_insert(NonEmptyUnorderVec::new(value));
+        match self.btr_search_by(|x| x.cmp(&key)) {
+            Ok(insert_to) => self.itms[insert_to].1.push(value),
+            Err(insert_at) => self
+                .itms
+                .insert(insert_at, (key, NonEmptyUnorderVec::new(value))),
         }
     }
 
     pub fn get<'a, 'b>(&'a self, key: &'b K) -> Option<&'a NonEmptyUnorderVec<V>> {
-        self.0.get(key)
+        let f = self.itms.binary_search_by_key(&key, |x| &x.0).ok()?;
+
+        self.itms.get(f).map(|x| &x.1)
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.itms.len()
     }
 
-    pub fn with_capacity(_len: usize) -> Self {
-        Self(BTreeMap::new())
+    pub fn with_capacity(len: usize) -> Self {
+        Self {
+            itms: VecDeque::with_capacity(len),
+        }
     }
 
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self {
+            itms: VecDeque::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.itms.is_empty()
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, K, V> {
         Iter {
-            inner: self.0.iter(),
+            inner: self.itms.iter(),
             current_tail_iter: None,
+        }
+    }
+
+    pub fn btr_search_by(&self, f: impl Fn(&K) -> Ordering) -> Result<usize, usize> {
+        let f = |x: &(K, NonEmptyUnorderVec<V>)| f(&x.0);
+
+        return self.itms.binary_search_by(f);
+
+        if self.itms.len() <= BTR_SEARCH_NUM {
+            return self.itms.binary_search_by(f);
+        } else {
+            let this = &self.itms;
+
+            let (front, back) = this.as_slices();
+            let cmp_back = back.first().map(|elem| f(elem));
+
+            if let Some(Ordering::Equal) = cmp_back {
+                Ok(front.len())
+            } else if let Some(Ordering::Less) = cmp_back {
+                linear_search_slice_by(back, f)
+                    .map(|idx| idx + front.len())
+                    .map_err(|idx| idx + front.len())
+            } else {
+                linear_search_slice_by(front, f)
+            }
         }
     }
 }
 
+const BTR_SEARCH_NUM: usize = 128;
+
+fn linear_search_slice_by<T>(slice: &[T], f: impl Fn(&T) -> Ordering) -> Result<usize, usize> {
+    if slice.is_empty() {
+        return Err(0);
+    }
+
+    for (i, item) in slice.iter().enumerate() {
+        match f(item) {
+            Ordering::Less => {}
+            Ordering::Equal => return Ok(i),
+            Ordering::Greater => return Err(i),
+        }
+    }
+
+    return Err(slice.len());
+}
+
 pub struct Iter<'a, K, V> {
-    inner: btree_map::Iter<'a, K, NonEmptyUnorderVec<V>>,
+    inner: vec_deque::Iter<'a, (K, NonEmptyUnorderVec<V>)>,
     current_tail_iter: Option<(&'a K, crate::nonempty_vec::Iter<'a, V>)>,
 }
 
@@ -86,7 +138,7 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
 }
 
 pub struct IntoIter<K: Clone, V> {
-    inner: btree_map::IntoIter<K, NonEmptyUnorderVec<V>>,
+    inner: vec_deque::IntoIter<(K, NonEmptyUnorderVec<V>)>,
     current: Option<(K, std::vec::IntoIter<V>)>,
 }
 
@@ -97,7 +149,7 @@ impl<K: Clone, V> IntoIterator for BTreeVec<K, V> {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            inner: self.0.into_iter(),
+            inner: self.itms.into_iter(),
             current: None,
         }
     }
@@ -112,12 +164,12 @@ impl<K: Clone, V> Iterator for IntoIter<K, V> {
                 Some(t) => t,
                 None => {
                     let (k, vs) = self.inner.next()?;
-                    
+
                     let (front, iter) = vs.into_iter_with_front();
                     self.current = Some((k.clone(), iter));
 
-                    return Some((k, front))
-                },
+                    return Some((k, front));
+                }
             };
 
             match values.next() {
@@ -125,12 +177,11 @@ impl<K: Clone, V> Iterator for IntoIter<K, V> {
                 None => {
                     self.current.take();
                     continue;
-                },
+                }
             }
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -145,12 +196,14 @@ mod test {
         v.push(1, 10);
         v.push(8, 1);
         v.push(8, 3);
-        
 
         let mut v_vec = v.into_iter().collect::<Vec<_>>();
         v_vec.sort();
 
-        assert_eq!(vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 1), (8, 3)], v_vec)
+        assert_eq!(
+            vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 1), (8, 3)],
+            v_vec
+        )
     }
 
     #[test]
@@ -162,10 +215,25 @@ mod test {
         v.push(2, 10);
         v.push(1, 10);
         v.push(8, 1);
-        
 
-        let v_vec = v.iter().map(|(a,b)| (*a,*b)).collect::<Vec<_>>();
+        let v_vec = v.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
 
-        assert_eq!(vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 3), (8, 1)], v_vec)
+        assert_eq!(
+            vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 3), (8, 1)],
+            v_vec
+        )
+    }
+
+    #[test]
+    fn linear_search() {
+        let sl = &[0, 1, 3, 4, 5];
+
+        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&2)), Err(2));
+
+        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&0)), Ok(0));
+
+        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&5)), Ok(4));
+
+        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&9)), Err(5));
     }
 }

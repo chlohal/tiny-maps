@@ -21,7 +21,7 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
     type Parent: MultidimensionalParent<DIMENSION_COUNT>;
 
     type DeltaFromParent: Ord + Zero + Copy + Clone + Debug;
-    type DeltaFromSelf: SerializeMinimal<ExternalData<'static> = ()>
+    type DeltaFromSelfAsChild: SerializeMinimal<ExternalData<'static> = ()>
         + DeserializeFromMinimal<ExternalData<'static> = ()>
         + Zero
         + Debug;
@@ -34,16 +34,16 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
     fn delta_from_self(
         finl: &Self::DeltaFromParent,
         initil: &Self::DeltaFromParent,
-    ) -> Self::DeltaFromSelf;
+    ) -> Self::DeltaFromSelfAsChild;
     fn apply_delta_from_self(
-        delta: &Self::DeltaFromSelf,
+        delta: &Self::DeltaFromSelfAsChild,
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent;
 }
 
 pub trait MultidimensionalValue<Key>:
     'static
-    + SerializeMinimal
+    + SerializeMinimal<ExternalData<'static> = ()>
     + for<'deserialize> DeserializeFromMinimal<ExternalData<'deserialize> = &'deserialize Key>
     + Clone
     + Debug
@@ -52,7 +52,7 @@ pub trait MultidimensionalValue<Key>:
 
 impl<Key, T> MultidimensionalValue<Key> for T where
     T: 'static
-        + SerializeMinimal
+        + SerializeMinimal<ExternalData<'static> = ()>
         + for<'deserialize> DeserializeFromMinimal<ExternalData<'deserialize> = &'deserialize Key>
         + Clone
         + Debug

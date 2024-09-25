@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, fmt::Debug};
+use std::fmt::Debug;
 
 pub struct OrderByFirst<Key, Value>(pub Key, pub Value);
 

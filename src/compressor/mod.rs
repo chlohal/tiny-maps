@@ -1,8 +1,8 @@
 use std::{
-    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, ops::{Range, RangeInclusive}, path::PathBuf
+    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf
 };
 
-use compressed_data::{flattened_id, unflattened_id, CompressedOsmData, UncompressedOsmData};
+use compressed_data::{flattened_id, CompressedOsmData, UncompressedOsmData};
 use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 use osmpbfreader::{OsmId, OsmObj};
 
@@ -55,20 +55,12 @@ impl Compressor {
             queue_to_handle_at_end: VecDeque::new(),
         }
     }
-    pub fn get_element_bbox(&self, id: &OsmId) -> Option<&BoundingBox<i32>> {
+    pub fn get_element_bbox(&self, id: &OsmId) -> Option<BoundingBox<i32>> {
         let f = self
             .cache_bboxes
             .find_first_item_at_key_exact(&flattened_id(id))
-            .map(|x| x.inner());
+            .map(|x| x.inner().to_owned());
         f
-    }
-    pub fn get_elements_bbox_in_range<'a>(
-        &'a self,
-        range: &'a RangeInclusive<u64>,
-    ) -> impl Iterator<Item = (OsmId, &'a BoundingBox<i32>)> + 'a {
-        self.cache_bboxes
-            .find_entries_in_box(range)
-            .map(|(id, bbox)| (unflattened_id(id), bbox.inner()))
     }
     pub fn write_element(&mut self, element: OsmObj) {
         let data = CompressedOsmData::make_from_obj(element, &mut self.cache_bboxes);
@@ -89,8 +81,8 @@ impl Compressor {
     }
 
     pub fn flush_to_storage(&mut self) -> Result<(), io::Error> {
-        self.geography.flush(()).unwrap();
-        self.cache_bboxes.flush(()).unwrap();
+        self.geography.flush().unwrap();
+        self.cache_bboxes.flush().unwrap();
 
         self.values.0.flush()?;
         self.values.1.flush()?;
