@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     fs::File,
     io::{Seek, Write},
     path::PathBuf,
@@ -18,7 +17,7 @@ use super::{
     NODE_SATURATION_POINT,
 };
 use minimal_storage::{
-    paged_storage::{Page, PageId, PagedStorage},
+    paged_storage::{PageId, PagedStorage},
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
 };
 
@@ -87,19 +86,6 @@ where
         item
     }
 
-    pub fn iter<'a>(&'a mut self) -> impl Iterator<Item = (Key, &'a Value)> + 'a {
-        let root_node = &self.root.node;
-
-        let nodes = match &root_node.left_right_split {
-            Some((l, r)) => vec![&**l, &**r],
-            None => vec![],
-        };
-
-        todo!();
-
-        vec![].into_iter()
-    }
-
     pub fn insert(&mut self, k: &Key, item: Value) {
         let (leaf, leaf_bbox, structure_changed) = self
             .root
@@ -124,6 +110,7 @@ where
             &Default::default(),
         )
     }
+
 }
 
 
@@ -165,46 +152,6 @@ where
             }
 
             return (&tree, bbox);
-        }
-    }
-
-    // Find the smallest node which completely covers the given Parent's area.
-    fn search_node_covering_parent<'a>(
-        &'a self,
-        k: &Key::Parent,
-    ) -> (
-        &'a Node<DIMENSION_COUNT, Key, Value>,
-        Key::Parent,
-        <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
-    ) {
-        let mut tree = &self.node;
-
-        let mut bbox = self.root_bbox.clone();
-        let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
-
-        loop {
-            match &tree.left_right_split {
-                Some((left, right)) => {
-                    let (left_bbox_calculated, right_bbox_calculated) =
-                        bbox.split_evenly_on_dimension(&direction);
-
-                    if left_bbox_calculated.contains(k) {
-                        tree = left;
-                        bbox = left_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
-                    } else if right_bbox_calculated.contains(k) {
-                        tree = right;
-                        bbox = right_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
-                    }
-                }
-                None => {}
-            }
-
-            return (tree, bbox, direction);
         }
     }
 

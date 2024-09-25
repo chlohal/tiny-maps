@@ -1,5 +1,5 @@
 use std::{
-    cmp::min, collections::BTreeMap, fs::File, io::{self, BufReader, BufWriter, Read, Seek, Write}, ops::{Deref, DerefMut}, path::PathBuf, sync::{atomic::AtomicBool, Arc, Mutex, RwLock}
+    cmp::min, fs::File, io::{self, BufReader, BufWriter, Read, Seek, Write}, ops::{Deref, DerefMut}, path::PathBuf, sync::{atomic::AtomicBool, Arc, Mutex, RwLock}
 };
 
 const THOUSAND: usize = 1024;
@@ -97,13 +97,9 @@ struct PageUse<const PAGE_SIZE_K: usize>
     lowest_unallocated_id: usize,
     freed_pages: Vec<PageId<PAGE_SIZE_K>>,
     file: File,
-    path: PathBuf,
 }
 
 impl<const K: usize> PageUse<K> {
-    pub fn reopen_file(&self) -> File {
-        open_file(&self.path)
-    }
     pub fn alloc_new(&mut self) -> PageId<K> {
         if let Some(p) = self.freed_pages.pop() {
             return p;
@@ -134,8 +130,6 @@ impl<const K: usize> PageUse<K> {
             .seek(io::SeekFrom::Start(id.byte_offset()))
             .unwrap();
         file.write_all(&[0; PAGE_HEADER_SIZE]).unwrap();
-
-        drop(file);
 
         id
     }
@@ -212,7 +206,6 @@ where
             lowest_unallocated_id,
             freed_pages: Vec::new(),
             file,
-            path: id,
         };
 
         let pageuse = Arc::new(Mutex::new(pageuse));

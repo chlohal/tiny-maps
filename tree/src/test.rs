@@ -18,17 +18,6 @@ pub fn test() {
 
     t.flush().unwrap();
 
-    let mut found: usize = 0;
-
-    for itm in t.iter() {
-        found += 1;
-        dbg!(itm.0, itm.1.inner());
-
-        assert_eq!(itm.0, *itm.1.inner());
-    }
-
-    assert_eq!(found, high as usize);
-
     for i in 0..high {
         let stored_i = t.find_first_item_at_key_exact(&i).unwrap().into_inner();
 

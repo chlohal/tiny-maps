@@ -69,25 +69,6 @@ impl<K: Ord + Clone, V> BTreeVec<K, V> {
         let f = |x: &(K, NonEmptyUnorderVec<V>)| f(&x.0);
 
         return self.itms.binary_search_by(f);
-
-        if self.itms.len() <= BTR_SEARCH_NUM {
-            return self.itms.binary_search_by(f);
-        } else {
-            let this = &self.itms;
-
-            let (front, back) = this.as_slices();
-            let cmp_back = back.first().map(|elem| f(elem));
-
-            if let Some(Ordering::Equal) = cmp_back {
-                Ok(front.len())
-            } else if let Some(Ordering::Less) = cmp_back {
-                linear_search_slice_by(back, f)
-                    .map(|idx| idx + front.len())
-                    .map_err(|idx| idx + front.len())
-            } else {
-                linear_search_slice_by(front, f)
-            }
-        }
     }
 }
 

@@ -1,10 +1,9 @@
 use std::marker::PhantomData;
 
 use btree_vec::BTreeVec;
-use minimal_storage::{
-    paged_storage::{PageId, PagedStorage},
-    Storage,
-};
+use minimal_storage::
+    paged_storage::{PageId, PagedStorage}
+;
 
 use crate::{tree_traits::{MultidimensionalKey, MultidimensionalValue}, PAGE_SIZE};
 

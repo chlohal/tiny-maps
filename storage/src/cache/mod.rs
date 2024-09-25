@@ -76,7 +76,6 @@ where
         }
 
         let mut total_size = self.cached_bytes.load(Ordering::Relaxed);
-        let prev_total_size = total_size;
 
         for (size, cmp::Reverse(k)) in to_rem {
             drop(cache.remove(&k));
