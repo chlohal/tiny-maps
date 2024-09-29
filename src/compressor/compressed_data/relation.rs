@@ -2,20 +2,20 @@ use minimal_storage::{packed_string_serialization::StringSerialVariation, serial
 use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 use osmpbfreader::{OsmObj, Ref, Relation, RelationId};
 
-use crate::compressor::{compressed_data::flattened_id, tag_compressing::{self, relation::inline_relation_tags, InlinedTags}};
+use crate::compressor::{compressed_data::flattened_id, tag_compressing::{self, relation::inline_relation_tags, InlinedTags}, CACHE_SATURATION};
 
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
 use super::CompressedOsmData;
 
-pub fn osm_relation_to_compressed_node(relation: Relation, bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>) -> Result<CompressedOsmData, OsmObj> {
+pub fn osm_relation_to_compressed_node(relation: Relation, bbox_cache: &mut StoredBinaryTree<{ CACHE_SATURATION }, u64, BoundingBox<i32>>) -> Result<CompressedOsmData, OsmObj> {
 
     let bbox: Option<BoundingBox<i32>> = relation.refs.iter().map(|child| {
         let id = flattened_id(&child.member);
         
         let child_box = bbox_cache.find_first_item_at_key_exact(&id)?.into_inner();
 
-        Some(child_box)
+        Some(child_box.0)
     }).collect();
 
     let Some(bbox) = bbox else { return Err(OsmObj::Relation(relation)) };

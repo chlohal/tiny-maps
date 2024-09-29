@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{btree_map, vec_deque, BTreeMap, VecDeque},
+    collections::{vec_deque, VecDeque},
 };
 
 use crate::nonempty_vec::NonEmptyUnorderVec;
@@ -70,24 +70,6 @@ impl<K: Ord + Clone, V> BTreeVec<K, V> {
 
         return self.itms.binary_search_by(f);
     }
-}
-
-const BTR_SEARCH_NUM: usize = 128;
-
-fn linear_search_slice_by<T>(slice: &[T], f: impl Fn(&T) -> Ordering) -> Result<usize, usize> {
-    if slice.is_empty() {
-        return Err(0);
-    }
-
-    for (i, item) in slice.iter().enumerate() {
-        match f(item) {
-            Ordering::Less => {}
-            Ordering::Equal => return Ok(i),
-            Ordering::Greater => return Err(i),
-        }
-    }
-
-    return Err(slice.len());
 }
 
 pub struct Iter<'a, K, V> {
@@ -203,18 +185,5 @@ mod test {
             vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 3), (8, 1)],
             v_vec
         )
-    }
-
-    #[test]
-    fn linear_search() {
-        let sl = &[0, 1, 3, 4, 5];
-
-        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&2)), Err(2));
-
-        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&0)), Ok(0));
-
-        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&5)), Ok(4));
-
-        assert_eq!(linear_search_slice_by(sl, |x| x.cmp(&9)), Err(5));
     }
 }

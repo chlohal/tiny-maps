@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use minimal_storage::serialize_fast::FastMinSerde;
 
 use crate::point_range::StoredBinaryTree;
 
@@ -10,10 +10,10 @@ pub fn test() {
 
     let high = u16::MAX;
 
-    let mut t = StoredBinaryTree::new(0..=high, folder.clone());
+    let mut t = StoredBinaryTree::<8000, _, _>::new(0..=high, folder.clone());
 
     for i in 0..high {
-        t.insert(&i, i.into());
+        t.insert(&i, FastMinSerde(i).into());
     }
 
     t.flush().unwrap();
@@ -21,7 +21,7 @@ pub fn test() {
     for i in 0..high {
         let stored_i = t.find_first_item_at_key_exact(&i).unwrap().into_inner();
 
-        assert_eq!(i, stored_i);
+        assert_eq!(i, *stored_i);
     }
 
     std::fs::remove_dir_all(folder).unwrap();

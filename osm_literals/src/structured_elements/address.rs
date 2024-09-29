@@ -4,7 +4,7 @@ use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use minimal_storage::varint::ToVarint;
 use osmpbfreader::Tags;
 
-use crate::aux::string_prefix_view::StrAsciiPrefixView;
+use crate::auxil::string_prefix_view::StrAsciiPrefixView;
 use crate::literal::{LiteralKey, WellKnownKeyVar};
 
 use crate::{

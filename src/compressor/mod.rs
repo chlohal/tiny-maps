@@ -3,24 +3,28 @@ use std::{
 };
 
 use compressed_data::{flattened_id, CompressedOsmData, UncompressedOsmData};
+use minimal_storage::serialize_fast::FastMinSerde;
 use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 use osmpbfreader::{OsmId, OsmObj};
 
 use tree::{
     bbox::{BoundingBox, EARTH_BBOX},
     open_tree,
-    point_range::DisregardWhenDeserializing,
-    StoredPointTree, StoredTree,
+    point_range::{DisregardWhenDeserializing, StoredBinaryTree},
+    StoredTree,
 };
 
 pub mod compressed_data;
 pub mod tag_compressing;
 pub mod types;
 
+const CACHE_SATURATION: usize = 4_000;
+const DATA_SATURATION: usize = 8_000;
+
 pub struct Compressor {
     values: (LiteralPool<Literal>, LiteralPool<LiteralValue>),
-    pub cache_bboxes: StoredPointTree<1, u64, BoundingBox<i32>>,
-    pub geography: StoredTree<2, BoundingBox<i32>, UncompressedOsmData>,
+    pub cache_bboxes: StoredBinaryTree<CACHE_SATURATION, u64, BoundingBox<i32>>,
+    pub geography: StoredTree<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>,
     queue_to_handle_at_end: VecDeque<OsmObj>,
 }
 
@@ -31,15 +35,16 @@ impl Compressor {
         let lit_file = BufWriter::new(open_file_with_write(&state_path.join("literals")));
         let val_file = BufWriter::new(open_file_with_write(&state_path.join("values")));
 
-        let mut geography = open_tree::<2, BoundingBox<i32>, UncompressedOsmData>(
+        let mut geography = open_tree::<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>(
             state_path.join("geography"),
             EARTH_BBOX,
         );
 
         let mut cache_bboxes = open_tree::<
             1,
+            CACHE_SATURATION,
             u64,
-            DisregardWhenDeserializing<u64, BoundingBox<i32>>,
+            DisregardWhenDeserializing<u64, FastMinSerde<BoundingBox<i32>>>,
         >(state_path.join("tmp.bboxes"), 0..=u64::MAX);
 
         geography.expand_to_depth(5);
@@ -60,7 +65,7 @@ impl Compressor {
             .cache_bboxes
             .find_first_item_at_key_exact(&flattened_id(id))
             .map(|x| x.inner().to_owned());
-        f
+        f.map(|x| x.0)
     }
     pub fn write_element(&mut self, element: OsmObj) {
         let data = CompressedOsmData::make_from_obj(element, &mut self.cache_bboxes);

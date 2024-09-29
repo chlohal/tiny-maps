@@ -216,7 +216,7 @@ where
         }
     }
 
-    pub fn new_page(&mut self, item: T) -> PageId<K> {
+    pub fn new_page(&self, item: T) -> PageId<K> {
         let id = self.pageuse.lock().unwrap().alloc_new();
 
         let page = Page {

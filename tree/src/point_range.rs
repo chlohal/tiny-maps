@@ -4,15 +4,14 @@ use std::{
 };
 
 use minimal_storage::{
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
-    varint::{FromVarint, ToVarint},
+    serialize_fast::FastMinSerde, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{FromVarint, ToVarint}
 };
 
-use crate::structure::LongLatTree;
+use crate::structure::StoredTree;
 
 use super::tree_traits::{Average, MultidimensionalKey, MultidimensionalParent, Zero};
 
-pub type StoredBinaryTree<K, T> = LongLatTree<1, K, DisregardWhenDeserializing<K, T>>;
+pub type StoredBinaryTree<const NODE_SATURATION_POINT: usize, K, T> = StoredTree<1, NODE_SATURATION_POINT, K, DisregardWhenDeserializing<K, FastMinSerde<T>>>;
 
 #[repr(transparent)]
 pub struct DisregardWhenDeserializing<Disregard, T>(T, PhantomData<Disregard>);

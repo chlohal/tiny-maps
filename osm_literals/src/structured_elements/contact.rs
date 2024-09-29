@@ -2,7 +2,7 @@ use minimal_storage::serialize_min::{DeserializeFromMinimal, ReadExtReadOne, Ser
 use osmpbfreader::Tags;
 
 
-use crate::aux::string_prefix_view::StrAsciiPrefixView;
+use crate::auxil::string_prefix_view::StrAsciiPrefixView;
 use crate::literal::WellKnownKeyVar;
 
 use crate::{

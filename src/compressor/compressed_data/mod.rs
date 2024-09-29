@@ -3,7 +3,7 @@ use osmpbfreader::{NodeId, OsmId, OsmObj, Ref, RelationId, WayId};
 use relation::{osm_relation_to_compressed_node, serialize_relation};
 use way::{osm_way_to_compressed_node, serialize_way};
 
-use tree::{bbox::BoundingBox, point_range::StoredBinaryTree, StoredPointTree};
+use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
 use minimal_storage::{
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
@@ -12,7 +12,7 @@ use minimal_storage::{
 
 use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 
-use super::tag_compressing::{node::Node, relation::Relation, way::Way, InlinedTags};
+use super::{tag_compressing::{node::Node, relation::Relation, way::Way, InlinedTags}, CACHE_SATURATION};
 
 mod node;
 mod relation;
@@ -58,7 +58,7 @@ impl CompressedOsmData {
 
     pub fn make_from_obj(
         value: OsmObj,
-        bbox_cache: &mut StoredPointTree<1, u64, BoundingBox<i32>>,
+        bbox_cache: &mut StoredBinaryTree<{ CACHE_SATURATION }, u64, BoundingBox<i32>>,
     ) -> Result<Self, OsmObj> {
         let value = match value {
             OsmObj::Node(n) => osm_node_to_compressed_node(n),
@@ -106,11 +106,11 @@ pub fn unflattened_id(id: u64) -> OsmId {
 fn insert_bbox(
     id: &OsmId,
     bbox: BoundingBox<i32>,
-    bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>,
+    bbox_cache: &mut StoredBinaryTree<{ CACHE_SATURATION }, u64, BoundingBox<i32>>,
 ) {
     let inner = flattened_id(id);
 
-    bbox_cache.insert(&inner, bbox.into());
+    bbox_cache.insert(&inner, minimal_storage::serialize_fast::FastMinSerde(bbox).into());
 }
 
 impl DeserializeFromMinimal for CompressedOsmData {

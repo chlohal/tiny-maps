@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use minimal_storage::{
+    serialize_fast::MinimalSerdeFast,
     serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
     varint::{from_varint, FromVarint, ToVarint},
 };
@@ -61,6 +62,32 @@ impl<T> BoundingBox<T> {
 impl<T: PartialEq> BoundingBox<T> {
     fn is_point(&self) -> bool {
         self.x == self.x_end && self.y == self.y_end
+    }
+}
+
+impl MinimalSerdeFast for BoundingBox<i32> {
+    fn fast_minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        external_data: <Self as SerializeMinimal>::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        self.x.fast_minimally_serialize(write_to, external_data)?;
+        self.y.fast_minimally_serialize(write_to, external_data)?;
+        self.x_end
+            .fast_minimally_serialize(write_to, external_data)?;
+        self.y_end.fast_minimally_serialize(write_to, external_data)
+    }
+
+    fn fast_deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: <Self as DeserializeFromMinimal>::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        Ok(Self {
+            x: i32::fast_deserialize_minimal(from, external_data)?,
+            y: i32::fast_deserialize_minimal(from, external_data)?,
+            x_end: i32::fast_deserialize_minimal(from, external_data)?,
+            y_end: i32::fast_deserialize_minimal(from, external_data)?,
+        })
     }
 }
 

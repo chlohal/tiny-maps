@@ -1,4 +1,4 @@
-use std::{cmp, collections::VecDeque};
+use std::collections::VecDeque;
 #[derive(Debug)]
 pub struct TopNHeap<const SIZE: usize, T: PartialEq + Ord + Clone, K> {
     priorities: VecDeque<(T, K)>,
@@ -77,26 +77,5 @@ impl<const SIZE: usize, T: PartialEq + Ord + Clone, K> TopNHeap<SIZE, T, K> {
     
     pub fn drain(self) -> impl Iterator<Item = (T, K)> {
         self.priorities.into_iter()
-    }
-}
-
-struct CompareByFirst<I: Eq + Ord, T>(I, T);
-
-impl<I: Eq + Ord, T> Eq for CompareByFirst<I, T> {}
-
-impl<I: Eq + Ord, T> Ord for CompareByFirst<I, T> {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        Ord::cmp(&self.0, &other.0)
-    }
-}
-
-impl<I: Eq + Ord, T> PartialEq for CompareByFirst<I, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl<I: Eq + Ord, T> PartialOrd for CompareByFirst<I, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
     }
 }

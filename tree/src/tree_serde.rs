@@ -11,8 +11,8 @@ use crate::{
     }
 };
 
-impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
-    for Inner<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
+    for Inner<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -42,8 +42,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
-    for Inner<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> DeserializeFromMinimal
+    for Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -77,17 +77,17 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
     StorageReachable<<Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent>
-    for Inner<DIMENSION_COUNT, Key, Value>
+    for Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
-    for crate::structure::Root<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> DeserializeFromMinimal
+    for crate::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -109,8 +109,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
-    for crate::structure::Root<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
+    for crate::structure::Root<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -130,8 +130,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> DeserializeFromMinimal
-    for crate::structure::Node<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> DeserializeFromMinimal
+    for crate::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -180,8 +180,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> SerializeMinimal
-    for crate::structure::Node<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
+    for crate::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,

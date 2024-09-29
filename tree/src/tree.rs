@@ -7,7 +7,7 @@ use std::{
 use btree_vec::BTreeVec;
 
 use crate::{
-    structure::{Inner, LongLatTree, Node, Root, TreePagedStorage},
+    structure::{Inner, StoredTree, Node, Root, TreePagedStorage},
     PAGE_SIZE,
 };
 
@@ -17,16 +17,10 @@ use super::{
     NODE_SATURATION_POINT,
 };
 use minimal_storage::{
-    paged_storage::{PageId, PagedStorage},
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    paged_storage::{PageId, PagedStorage}, serialize_fast::FastMinSerde, serialize_min::{DeserializeFromMinimal, SerializeMinimal}
 };
 
-pub type StoredPointTree<const D: usize, K, T> =
-    LongLatTree<D, K, DisregardWhenDeserializing<K, T>>;
-
-pub type StoredTree<const D: usize, K, T> = LongLatTree<D, K, T>;
-
-impl<const DIMENSION_COUNT: usize, Key, Value> LongLatTree<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> StoredTree<DIMENSION_COUNT, NODE_SATURATION_POINT,Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -52,7 +46,7 @@ where
             Root::deserialize_minimal(&mut structure_file, &folder).unwrap()
         };
 
-        LongLatTree {
+        StoredTree {
             structure_file,
             root,
             structure_dirty: true,
@@ -114,7 +108,7 @@ where
 }
 
 
-impl<const DIMENSION_COUNT: usize, Key, Value> Root<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -123,7 +117,7 @@ where
     fn search_leaf_for_key<'a>(
         &'a self,
         k: &Key,
-    ) -> (&'a Node<DIMENSION_COUNT, Key, Value>, Key::Parent) {
+    ) -> (&'a Node<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>, Key::Parent) {
         let mut tree = &self.node;
 
         let mut bbox = self.root_bbox.to_owned();
@@ -158,7 +152,7 @@ where
     fn get_key_leaf_splitting_if_needed<'a>(
         &'a mut self,
         k: &Key,
-        storage: &mut TreePagedStorage<DIMENSION_COUNT, Key, Value>,
+        storage: &mut TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
     ) -> (PageId<PAGE_SIZE>, Key::Parent, bool) {
         let mut tree = &mut self.node;
         let mut direction =
@@ -192,7 +186,7 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, Key, Value> Node<DIMENSION_COUNT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> Node<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -200,7 +194,7 @@ where
     pub(crate) fn new(
         id: u64,
         bbox: Key::Parent,
-        storage: &mut TreePagedStorage<DIMENSION_COUNT, Key, Value>,
+        storage: &mut TreePagedStorage<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
     ) -> Self {
         Self::new_with_children(id, bbox, storage, BTreeVec::new())
     }
@@ -208,7 +202,7 @@ where
     pub(crate) fn new_with_children(
         id: u64,
         bbox: Key::Parent,
-        storage: &mut TreePagedStorage<DIMENSION_COUNT, Key, Value>,
+        storage: &mut TreePagedStorage<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
         children: BTreeVec<Key::DeltaFromParent, Value>,
     ) -> Self {
         Self {
@@ -223,7 +217,7 @@ where
         &mut self,
         depth: usize,
         bbox: &Key::Parent,
-        storage: &mut TreePagedStorage<DIMENSION_COUNT, Key, Value>,
+        storage: &mut TreePagedStorage<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
         self.try_split_left_right(storage, direction);
@@ -241,7 +235,7 @@ where
 
     fn try_split_left_right(
         &mut self,
-        storage: &mut TreePagedStorage<DIMENSION_COUNT, Key, Value>,
+        storage: &mut TreePagedStorage<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
         if self.left_right_split.is_some() {
@@ -261,7 +255,7 @@ where
     }
     fn split_left_right_unchecked(
         &mut self,
-        storage: &mut TreePagedStorage<DIMENSION_COUNT, Key, Value>,
+        storage: &mut TreePagedStorage<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
         let (left_bb, right_bb) = self.bbox.split_evenly_on_dimension(direction);

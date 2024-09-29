@@ -2,13 +2,13 @@ use minimal_storage::serialize_min::SerializeMinimal;
 use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
 use osmpbfreader::{OsmId, Way, WayId};
 
-use crate::compressor::{compressed_data::flattened_id, tag_compressing::{self, way::inline_way_tags, InlinedTags}};
+use crate::compressor::{compressed_data::flattened_id, tag_compressing::{self, way::inline_way_tags, InlinedTags}, CACHE_SATURATION};
 
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
 use super::CompressedOsmData;
 
-pub fn osm_way_to_compressed_node(way: Way, bbox_cache: &mut StoredBinaryTree<u64, BoundingBox<i32>>) -> CompressedOsmData {
+pub fn osm_way_to_compressed_node(way: Way, bbox_cache: &mut StoredBinaryTree<{ CACHE_SATURATION }, u64, BoundingBox<i32>>) -> CompressedOsmData {
 
     let mut real_children = Vec::new();
 
@@ -16,11 +16,15 @@ pub fn osm_way_to_compressed_node(way: Way, bbox_cache: &mut StoredBinaryTree<u6
         let id = flattened_id(&OsmId::Node(*child));
         let child_box = bbox_cache.find_first_item_at_key_exact(&id);
 
-        if child_box.is_none() {
+        let child_box = match child_box {
+            Some(c) => c,
+            None => {
                 eprintln!("Node {child:?} (flattened ID: {id}) should exist. Encountered while building bounding box for way {:?}", way.id);
+                return None;
         }
+    };
 
-        let child_box = child_box?.into_inner();
+        let child_box = child_box.into_inner();
 
         real_children.push(id);
 
