@@ -99,10 +99,12 @@ impl Compressor {
         let mut len = self.queue_to_handle_at_end.len();
 
         //try 5 times to reduce the size
-        for _ in 0..5 {
+        for attempt in 0..5 {
+            println!("Attempt {attempt}/5 to reduce retry queue:");
             //keep going as long as the size reduces. if it stays the same,
             //then fall through to another of the 5 previous tries.
             loop {
+                println!("{len} items in retry queue...");
                 for _ in 0..len {
                     let elem = self.queue_to_handle_at_end.pop_front().unwrap();
 

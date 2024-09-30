@@ -22,6 +22,8 @@ fn main() {
 
     let mut compressor = Compressor::new(&state_dir);
 
+    let blob_count = reader.blobs().count();
+
     let blobs = reader
         .blobs()
         .enumerate()
@@ -43,6 +45,7 @@ fn main() {
         }
 
         if blobs_since_last_write >= WRITE_EVERY_N_CHUNKS {
+            println!("Chunk {blob_id}/{blob_count} finished");
             compressor.flush_to_storage().unwrap();
             blobs_since_last_write = 0;
         }
