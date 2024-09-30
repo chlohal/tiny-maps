@@ -12,9 +12,9 @@ const WRITE_EVERY_N_CHUNKS: usize = 8;
 fn main() {
     let args = Args::parse();
 
-    let file = File::open(args.osmpbf).expect("File doesn't exist!");
+    let file = File::open(&args.osmpbf).expect("File doesn't exist!");
 
-    let mut reader = osmpbfreader::OsmPbfReader::new(file);
+    let mut reader = osmpbfreader::OsmPbfReader::new(&file);
 
     let state_dir = env::current_dir()
     .unwrap()
@@ -22,7 +22,9 @@ fn main() {
 
     let mut compressor = Compressor::new(&state_dir);
 
-    let blob_count = reader.blobs().count();
+    //we need to make a new reader in order to get the blob count, but this iterator is much faster than anything else b/c it doesn't need to 
+    //decompress or process
+    let blob_count = osmpbfreader::OsmPbfReader::new(File::open(&args.osmpbf).expect("File doesn't exist!")).blobs().count();
 
     let blobs = reader
         .blobs()

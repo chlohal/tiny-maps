@@ -100,7 +100,7 @@ impl Compressor {
 
         //try 5 times to reduce the size
         for attempt in 0..5 {
-            println!("Attempt {attempt}/5 to reduce retry queue:");
+            println!("Attempt {attempt}/4 to reduce retry queue:");
             //keep going as long as the size reduces. if it stays the same,
             //then fall through to another of the 5 previous tries.
             loop {
