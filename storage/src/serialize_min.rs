@@ -17,6 +17,17 @@ pub trait DeserializeFromMinimal: Sized {
         from: &'a mut R,
         external_data: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error>;
+
+    fn read_past<'a, 'd: 'a, R: Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> std::io::Result<()> {
+        Self::deserialize_minimal(from, external_data).map(|_|())
+    }
+}
+
+pub trait MinimalSerializedSeek: DeserializeFromMinimal {
+    fn seek_past<R: Read>(from: &mut R) -> std::io::Result<()>;
 }
 
 pub trait ReadExtReadOne: Read {

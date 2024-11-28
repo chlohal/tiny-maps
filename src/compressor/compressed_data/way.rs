@@ -1,5 +1,6 @@
-use minimal_storage::serialize_min::SerializeMinimal;
-use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
+use minimal_storage::{pooled_storage::Pool, serialize_min::SerializeMinimal};
+use osm_structures::literal::Literal;
+use osm_value_atom::LiteralValue;
 use osmpbfreader::{OsmId, Way, WayId};
 
 use crate::compressor::{compressed_data::flattened_id, tag_compressing::{self, way::inline_way_tags, InlinedTags}, CACHE_SATURATION};
@@ -39,7 +40,7 @@ pub fn osm_way_to_compressed_node(way: Way, bbox_cache: &mut StoredBinaryTree<{ 
 
 pub fn serialize_way<W: std::io::Write>(
     write_to: &mut W,
-    pools: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+    pools: &mut (Pool<Literal>, Pool<LiteralValue>),
     id: &WayId,
     tags: &InlinedTags<tag_compressing::way::Way>,
     children: &Vec<u64>
@@ -60,7 +61,8 @@ pub fn serialize_way<W: std::io::Write>(
 
     literals.len().minimally_serialize(write_to, ())?;
     for literal in literals.iter() {
-        let id = LiteralPool::<Literal>::insert(pools, literal)?;
+        let (p1, p2) = pools;
+        let id = Pool::<Literal>::insert(p1, literal, p2)?;
 
         id.minimally_serialize(write_to, ())?;
     }

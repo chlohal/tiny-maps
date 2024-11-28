@@ -1,0 +1,18 @@
+{
+  "key": "disused:railway",
+  "label": "Type",
+  "options": [
+    "rail",
+    "level_crossing",
+    "station",
+    "halt",
+    "tram",
+    "switch",
+    "narrow_gauge",
+    "platform",
+    "crossing",
+    "stop",
+    "signal_box"
+  ],
+  "type": "typeCombo"
+}

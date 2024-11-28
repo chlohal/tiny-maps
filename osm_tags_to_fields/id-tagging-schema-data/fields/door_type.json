@@ -1,0 +1,14 @@
+{
+  "key": "door",
+  "label": "Type",
+  "options": [
+    "hinged",
+    "yes",
+    "overhead",
+    "sliding",
+    "no",
+    "double",
+    "automatic"
+  ],
+  "type": "typeCombo"
+}

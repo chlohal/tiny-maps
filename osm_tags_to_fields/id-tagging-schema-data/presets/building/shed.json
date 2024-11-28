@@ -1,0 +1,20 @@
+{
+    "icon": "fas-warehouse",
+    "fields": [
+        "{building}",
+        "lockable"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "building": "shed"
+    },
+    "terms": [
+        "hobbies",
+        "storage",
+        "workshop"
+    ],
+    "matchScore": 0.5,
+    "name": "Shed"
+}

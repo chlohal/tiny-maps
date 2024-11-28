@@ -1,0 +1,10 @@
+{
+  "key": "seamark:beacon_isolated_danger:shape",
+  "label": "Shape",
+  "options": [
+    "stake",
+    "tower",
+    "pile"
+  ],
+  "type": "combo"
+}

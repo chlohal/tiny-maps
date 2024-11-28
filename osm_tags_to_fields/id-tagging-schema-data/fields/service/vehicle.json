@@ -1,0 +1,8 @@
+{
+  "key": "service:vehicle:",
+  "label": "Services",
+  "options": [
+    "yes"
+  ],
+  "type": "multiCombo"
+}

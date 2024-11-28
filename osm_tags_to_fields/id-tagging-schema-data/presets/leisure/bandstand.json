@@ -1,0 +1,19 @@
+{
+    "icon": "fas-music",
+    "fields": [
+        "name",
+        "building_area_yes",
+        "operator"
+    ],
+    "moreFields": [
+        "gnis/feature_id-US"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "leisure": "bandstand"
+    },
+    "name": "Bandstand"
+}

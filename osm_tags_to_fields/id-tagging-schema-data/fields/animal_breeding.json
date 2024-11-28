@@ -1,0 +1,30 @@
+{
+  "key": "animal_breeding",
+  "label": "For Animals",
+  "options": [
+    "cow",
+    "pig",
+    "poultry",
+    "chicken",
+    "horse",
+    "dog",
+    "fish",
+    "gamecock",
+    "goat",
+    "sheep",
+    "cat",
+    "rabbit",
+    "birds",
+    "alpaca",
+    "mink",
+    "bird",
+    "deer",
+    "pheasant",
+    "donkey",
+    "snail",
+    "pigeon",
+    "goose",
+    "cattle"
+  ],
+  "type": "semiCombo"
+}

@@ -1,0 +1,20 @@
+{
+  "key": "fire_hydrant:diameter",
+  "label": "Diameter (mm, in, or letters)",
+  "options": [
+    "80",
+    "100",
+    "150",
+    "200",
+    "125",
+    "300",
+    "250",
+    "75",
+    "110",
+    "70",
+    "50",
+    "400"
+  ],
+  "snake_case": false,
+  "type": "combo"
+}

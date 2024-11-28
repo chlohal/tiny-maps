@@ -1,0 +1,25 @@
+{
+    "icon": "fas-seedling",
+    "fields": [
+        "name",
+        "operator",
+        "plant"
+    ],
+    "moreFields": [
+        "{@templates/contact}",
+        "address"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "landuse": "plant_nursery"
+    },
+    "terms": [
+        "flower",
+        "garden",
+        "grow",
+        "vivero"
+    ],
+    "name": "Plant Nursery"
+}

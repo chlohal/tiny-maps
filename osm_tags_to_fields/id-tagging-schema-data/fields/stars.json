@@ -1,0 +1,15 @@
+{
+  "key": "stars",
+  "label": "Stars",
+  "options": [
+    "3",
+    "4",
+    "2",
+    "5",
+    "1"
+  ],
+  "terms": [
+    "rating"
+  ],
+  "type": "combo"
+}

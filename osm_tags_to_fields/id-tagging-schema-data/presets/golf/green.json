@@ -1,0 +1,16 @@
+{
+    "icon": "temaki-golf_green",
+    "fields": [
+        "surface"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "golf": "green"
+    },
+    "terms": [
+        "Green"
+    ],
+    "name": "Putting Green"
+}

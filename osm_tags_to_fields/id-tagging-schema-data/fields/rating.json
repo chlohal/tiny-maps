@@ -1,0 +1,6 @@
+{
+  "caseSensitive": true,
+  "key": "rating",
+  "label": "Power Rating",
+  "type": "unit_number"
+}

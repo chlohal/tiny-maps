@@ -1,0 +1,14 @@
+{
+  "key": "sample_collection",
+  "label": "Samples",
+  "options": [
+    "covid19",
+    "yes",
+    "blood"
+  ],
+  "reference": {
+    "key": "healthcare",
+    "value": "sample_collection"
+  },
+  "type": "semiCombo"
+}

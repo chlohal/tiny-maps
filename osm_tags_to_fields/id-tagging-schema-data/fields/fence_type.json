@@ -1,0 +1,23 @@
+{
+  "key": "fence_type",
+  "label": "Type",
+  "options": [
+    "chain_link",
+    "wood",
+    "metal",
+    "railing",
+    "wire",
+    "split_rail",
+    "barbed_wire",
+    "bars",
+    "concrete",
+    "pole",
+    "chain",
+    "metal_bars",
+    "electric",
+    "stone",
+    "slatted",
+    "wall"
+  ],
+  "type": "combo"
+}

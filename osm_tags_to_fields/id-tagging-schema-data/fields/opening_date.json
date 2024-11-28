@@ -1,0 +1,6 @@
+{
+    "key": "opening_date",
+    "type": "date",
+    "label": "Expected Opening Date",
+    "placeholder": "YYYY-MM-DD"
+}

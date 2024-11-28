@@ -1,0 +1,14 @@
+{
+    "icon": "fas-vest",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "office": "surveyor"
+    },
+    "terms": [
+        "surveying"
+    ],
+    "name": "Surveyor Office"
+}

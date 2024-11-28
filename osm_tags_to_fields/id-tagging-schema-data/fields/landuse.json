@@ -1,0 +1,21 @@
+{
+  "key": "landuse",
+  "label": "Type",
+  "options": [
+    "farmland",
+    "residential",
+    "grass",
+    "forest",
+    "meadow",
+    "orchard",
+    "farmyard",
+    "industrial",
+    "vineyard",
+    "cemetery",
+    "commercial",
+    "allotments",
+    "retail",
+    "basin"
+  ],
+  "type": "typeCombo"
+}

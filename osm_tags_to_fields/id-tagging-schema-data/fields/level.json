@@ -1,0 +1,27 @@
+{
+  "key": "level",
+  "label": "Level",
+  "options": [
+    "0",
+    "1",
+    "-1",
+    "2",
+    "3",
+    "-2",
+    "4",
+    "5",
+    "-3",
+    "0.5",
+    "6"
+  ],
+  "prerequisiteTag": {
+    "keyNot": "building"
+  },
+  "terms": [
+    "building floor",
+    "deck",
+    "storey",
+    "story"
+  ],
+  "type": "semiCombo"
+}

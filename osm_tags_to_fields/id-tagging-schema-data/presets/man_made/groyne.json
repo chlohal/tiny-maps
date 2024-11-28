@@ -1,0 +1,19 @@
+{
+    "fields": [
+        "material",
+        "seamark/type"
+    ],
+    "geometry": [
+        "line",
+        "area"
+    ],
+    "tags": {
+        "man_made": "groyne"
+    },
+    "aliases": [
+        "Wing Dam",
+        "Wing Dyke",
+        "Spur Dyke"
+    ],
+    "name": "Groin"
+}

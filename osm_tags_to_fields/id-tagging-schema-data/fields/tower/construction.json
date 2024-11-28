@@ -1,0 +1,28 @@
+{
+  "icons": {
+    "freestanding": "roentgen-tube",
+    "guyed_lattice": "roentgen-lattice_guyed",
+    "guyed_tube": "roentgen-tube_guyed",
+    "lattice": "roentgen-lattice"
+  },
+  "key": "tower:construction",
+  "label": "Construction",
+  "options": [
+    "lattice",
+    "freestanding",
+    "guyed_lattice",
+    "monopole",
+    "dish",
+    "mast",
+    "lattice_steel",
+    "tube",
+    "tower",
+    "stone",
+    "dome",
+    "pole",
+    "guyed_tube",
+    "concrete"
+  ],
+  "placeholder": "Guyed, Lattice, Concealed, ...",
+  "type": "combo"
+}

@@ -1,0 +1,20 @@
+{
+  "key": "surveillance:zone",
+  "label": "Surveillance Zone",
+  "options": [
+    "traffic",
+    "town",
+    "building",
+    "area",
+    "parking",
+    "entrance",
+    "street",
+    "shop",
+    "public_transport_platform",
+    "public",
+    "bank",
+    "station",
+    "public_transport"
+  ],
+  "type": "combo"
+}

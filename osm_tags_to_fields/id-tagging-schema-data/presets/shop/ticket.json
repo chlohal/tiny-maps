@@ -1,0 +1,18 @@
+{
+    "icon": "fas-ticket-alt",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "shop": "ticket"
+    },
+    "terms": [
+        "box office"
+    ],
+    "name": "Ticket Seller",
+    "aliases": [
+        "Ticket Vendor",
+        "Ticket Booth"
+    ]
+}

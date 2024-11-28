@@ -1,0 +1,21 @@
+{
+  "key": "leisure",
+  "label": "Type",
+  "options": [
+    "pitch",
+    "swimming_pool",
+    "garden",
+    "park",
+    "playground",
+    "picnic_table",
+    "sports_centre",
+    "track",
+    "nature_reserve",
+    "fitness_centre",
+    "fitness_station",
+    "outdoor_seating",
+    "slipway",
+    "stadium"
+  ],
+  "type": "typeCombo"
+}

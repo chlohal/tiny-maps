@@ -1,0 +1,14 @@
+{
+    "key": "ele",
+    "type": "number",
+    "label": "Elevation (Meters)",
+    "geometry": [
+        "line",
+        "area",
+        "relation"
+    ],
+    "terms": [
+        "altitude",
+        "height"
+    ]
+}

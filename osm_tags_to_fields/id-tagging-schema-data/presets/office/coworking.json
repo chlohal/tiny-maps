@@ -1,0 +1,23 @@
+{
+    "icon": "maki-suitcase",
+    "fields": [
+        "{office}",
+        "{@templates/internet_access}"
+    ],
+    "moreFields": [
+        "{@templates/internet_access}",
+        "{@templates/poi}"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "coworking",
+        "office"
+    ],
+    "tags": {
+        "office": "coworking"
+    },
+    "name": "Coworking Space"
+}

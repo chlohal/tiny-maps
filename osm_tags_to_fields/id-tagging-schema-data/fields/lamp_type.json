@@ -1,0 +1,14 @@
+{
+  "key": "lamp_type",
+  "label": "Type",
+  "options": [
+    "electric",
+    "led",
+    "LED",
+    "high_pressure_sodium",
+    "sodium",
+    "gaslight",
+    "fluorescent"
+  ],
+  "type": "combo"
+}

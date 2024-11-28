@@ -1,0 +1,17 @@
+{
+    "icon": "temaki-pet_grooming",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "cat",
+        "cat grooming",
+        "dog",
+        "dog grooming"
+    ],
+    "tags": {
+        "shop": "pet_grooming"
+    },
+    "name": "Pet Groomer"
+}

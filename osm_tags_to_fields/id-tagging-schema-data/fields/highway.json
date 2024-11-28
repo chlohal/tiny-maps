@@ -1,0 +1,23 @@
+{
+  "key": "highway",
+  "label": "Type",
+  "options": [
+    "residential",
+    "service",
+    "track",
+    "footway",
+    "unclassified",
+    "path",
+    "crossing",
+    "tertiary",
+    "secondary",
+    "street_lamp",
+    "bus_stop",
+    "primary",
+    "turning_circle",
+    "living_street",
+    "cycleway",
+    "stop"
+  ],
+  "type": "typeCombo"
+}

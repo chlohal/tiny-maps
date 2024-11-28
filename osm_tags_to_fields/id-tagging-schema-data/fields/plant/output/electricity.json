@@ -1,0 +1,12 @@
+{
+  "caseSensitive": true,
+  "key": "plant:output:electricity",
+  "label": "Electric Power Output",
+  "placeholder": "500 MW, 1000 MW, 2000 MW...",
+  "prerequisiteTag": {
+    "key": "plant:output:electricity",
+    "valueNot": "no"
+  },
+  "snake_case": false,
+  "type": "unit_number"
+}

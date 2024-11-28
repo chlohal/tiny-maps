@@ -1,0 +1,25 @@
+{
+  "key": "shoes",
+  "label": "Shoes",
+  "options": [
+    "women",
+    "children",
+    "yes",
+    "orthopaedic",
+    "sport",
+    "men",
+    "orthopedic",
+    "supermarket",
+    "running",
+    "dancing",
+    "man",
+    "sports",
+    "barefoot",
+    "woman",
+    "boots",
+    "babies",
+    "oversize",
+    "sneakers"
+  ],
+  "type": "semiCombo"
+}

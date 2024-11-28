@@ -1,0 +1,14 @@
+{
+  "key": "water",
+  "label": "Type",
+  "options": [
+    "pond",
+    "lake",
+    "reservoir",
+    "river",
+    "basin",
+    "wastewater",
+    "canal"
+  ],
+  "type": "combo"
+}

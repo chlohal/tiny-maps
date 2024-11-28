@@ -1,0 +1,29 @@
+{
+    "name": "Sample Collection Facility",
+    "icon": "fas-vial",
+    "fields": [
+        "name",
+        "sample_collection",
+        "operator",
+        "website",
+        "phone",
+        "address",
+        "opening_hours"
+    ],
+    "moreFields": [
+        "{healthcare}"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "blood sample collection",
+        "laboratory",
+        "medical",
+        "urine sample collection"
+    ],
+    "tags": {
+        "healthcare": "sample_collection"
+    }
+}

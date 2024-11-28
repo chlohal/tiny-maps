@@ -1,0 +1,38 @@
+{
+  "key": "brewery",
+  "label": "Sold Beer brands",
+  "options": [
+    "yes",
+    "various",
+    "no",
+    "Augustiner Bräu München",
+    "Guinness",
+    "Ayinger",
+    "Krombacher",
+    "Zipfer",
+    "Paulaner",
+    "Allgäuer Brauhaus",
+    "Brains",
+    "Bitburger",
+    "Gösser",
+    "Heineken",
+    "Asahi",
+    "Shepherd Neame",
+    "Radegast",
+    "Kühbacher",
+    "Veltins",
+    "Guinness;various",
+    "Hacker-Pschorr",
+    "Augustiner",
+    "Fuller's"
+  ],
+  "terms": [
+    "beer brand",
+    "beer dispensing",
+    "bottled beer",
+    "draft beer",
+    "on tap",
+    "tap beer"
+  ],
+  "type": "semiCombo"
+}

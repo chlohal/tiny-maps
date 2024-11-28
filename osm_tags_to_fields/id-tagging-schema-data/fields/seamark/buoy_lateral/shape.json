@@ -1,0 +1,11 @@
+{
+  "key": "seamark:buoy_lateral:shape",
+  "label": "Shape",
+  "options": [
+    "spar",
+    "conical",
+    "can",
+    "pillar"
+  ],
+  "type": "combo"
+}

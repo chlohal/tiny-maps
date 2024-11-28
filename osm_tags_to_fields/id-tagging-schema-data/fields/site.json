@@ -1,0 +1,15 @@
+{
+  "key": "site",
+  "label": "Type",
+  "options": [
+    "geodesic",
+    "stop_area",
+    "parking",
+    "wind_farm",
+    "traffic_signals",
+    "mall",
+    "piste",
+    "climbing"
+  ],
+  "type": "combo"
+}

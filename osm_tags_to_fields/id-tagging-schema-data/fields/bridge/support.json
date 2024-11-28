@@ -1,0 +1,13 @@
+{
+  "key": "bridge:support",
+  "label": "Type",
+  "options": [
+    "pier",
+    "yes",
+    "abutment",
+    "pylon",
+    "pillar",
+    "small_bridge"
+  ],
+  "type": "typeCombo"
+}

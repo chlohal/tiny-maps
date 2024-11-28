@@ -1,0 +1,17 @@
+{
+  "key": "fishing",
+  "label": "Fishing",
+  "options": [
+    "yes",
+    "no",
+    "private",
+    "licence",
+    "customers",
+    "permit",
+    "members_only",
+    "stocked",
+    "fee",
+    "permissive"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,17 @@
+{
+    "key": "direction",
+    "type": "combo",
+    "label": "Direction Affected",
+    "strings": {
+        "options": {
+            "forward": "Forward",
+            "backward": "Backward",
+            "both": "Both / All"
+        }
+    },
+    "geometry": [
+        "vertex"
+    ],
+    "autoSuggestions": false,
+    "customValues": false
+}

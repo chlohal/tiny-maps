@@ -1,0 +1,27 @@
+{
+    "icon": "fas-carrot",
+    "fields": [
+        "{shop}",
+        "organic"
+    ],
+    "moreFields": [
+        "fhrs/id-GB"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "fruit",
+        "produce",
+        "vegetable"
+    ],
+    "tags": {
+        "shop": "greengrocer"
+    },
+    "name": "Greengrocer",
+    "aliases": [
+        "Produce Store",
+        "Produce Shop"
+    ]
+}

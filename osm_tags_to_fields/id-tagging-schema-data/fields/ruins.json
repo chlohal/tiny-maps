@@ -1,0 +1,17 @@
+{
+  "key": "ruins",
+  "label": "Type",
+  "options": [
+    "yes",
+    "building",
+    "wall",
+    "church",
+    "no",
+    "castle",
+    "house",
+    "barrack",
+    "farm",
+    "bunker"
+  ],
+  "type": "combo"
+}

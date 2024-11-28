@@ -1,0 +1,14 @@
+{
+    "key": "location",
+    "type": "combo",
+    "label": "{location}",
+    "strings": {
+        "options": {
+            "outdoor": "Outdoor",
+            "indoor": "Indoor",
+            "roof": "Rooftop"
+        }
+    },
+    "autoSuggestions": false,
+    "customValues": false
+}

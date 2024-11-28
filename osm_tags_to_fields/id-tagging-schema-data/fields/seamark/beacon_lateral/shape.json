@@ -1,0 +1,11 @@
+{
+  "key": "seamark:beacon_lateral:shape",
+  "label": "Shape",
+  "options": [
+    "stake",
+    "pile",
+    "perch",
+    "pole"
+  ],
+  "type": "combo"
+}

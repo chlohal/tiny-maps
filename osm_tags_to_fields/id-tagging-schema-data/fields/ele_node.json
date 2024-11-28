@@ -1,0 +1,14 @@
+{
+    "key": "ele",
+    "type": "number",
+    "label": "{ele}",
+    "universal": true,
+    "geometry": [
+        "point",
+        "vertex"
+    ],
+    "terms": [
+        "altitude",
+        "height"
+    ]
+}

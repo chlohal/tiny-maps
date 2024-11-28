@@ -1,0 +1,24 @@
+{
+    "key": "parking",
+    "type": "combo",
+    "label": "Type",
+    "strings": {
+        "options": {
+            "surface": "Surface",
+            "underground": "Underground",
+            "multi-storey": "Multilevel",
+            "street_side": "Street-Side",
+            "lane": "Roadside Lane",
+            "carports": "Carports",
+            "garage_boxes": "Garage Boxes",
+            "rooftop": "Rooftop",
+            "sheds": "Sheds",
+            "layby": "Turnout / Lay-By",
+            "on_kerb": "On Kerb",
+            "half_on_kerb": "Half On Kerb",
+            "shoulder": "Shoulder"
+        }
+    },
+    "autoSuggestions": false,
+    "customValues": false
+}

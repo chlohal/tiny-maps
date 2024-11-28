@@ -1,0 +1,25 @@
+{
+    "icon": "fas-chess-knight",
+    "fields": [
+        "operator",
+        "address",
+        "building_area_yes",
+        "opening_hours"
+    ],
+    "moreFields": [
+        "level",
+        "wheelchair"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "game",
+        "toy"
+    ],
+    "tags": {
+        "amenity": "toy_library"
+    },
+    "name": "Toy Library"
+}

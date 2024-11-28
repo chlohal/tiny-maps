@@ -1,0 +1,10 @@
+{
+  "key": "ford",
+  "label": "Type",
+  "options": [
+    "yes"
+  ],
+  "placeholder": "Default",
+  "type": "typeCombo",
+  "usage": "group"
+}

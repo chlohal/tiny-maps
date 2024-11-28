@@ -1,0 +1,12 @@
+{
+  "key": "restriction",
+  "label": "Type",
+  "options": [
+    "no_u_turn",
+    "no_left_turn",
+    "only_straight_on",
+    "no_right_turn",
+    "only_right_turn"
+  ],
+  "type": "combo"
+}

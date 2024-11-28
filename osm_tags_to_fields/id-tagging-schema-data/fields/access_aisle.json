@@ -1,0 +1,9 @@
+{
+  "key": "access_aisle",
+  "label": "Type",
+  "options": [
+    "handicap",
+    "disabled"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,14 @@
+{
+  "key": "public_bookcase:type",
+  "label": "Type",
+  "options": [
+    "wooden_cabinet",
+    "phone_box",
+    "reading_box",
+    "metal_cabinet",
+    "glass_cabinet",
+    "shelf",
+    "shelter"
+  ],
+  "type": "combo"
+}

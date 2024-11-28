@@ -1,0 +1,23 @@
+{
+  "key": "bunker_type",
+  "label": "Type",
+  "options": [
+    "pillbox",
+    "munitions",
+    "bomb_shelter",
+    "gun_emplacement",
+    "hardened_aircraft_shelter",
+    "personnel_shelter",
+    "mg_nest",
+    "observation",
+    "blockhouse",
+    "technical",
+    "command",
+    "tobruk",
+    "missile_silo",
+    "foxhole",
+    "casemate",
+    "air_raid_shelter"
+  ],
+  "type": "combo"
+}

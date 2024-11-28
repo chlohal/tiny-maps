@@ -1,0 +1,32 @@
+{
+  "key": "historic:civilization",
+  "label": "Historic Civilization",
+  "options": [
+    "prehistoric",
+    "neolithic",
+    "imperial_chinese",
+    "ancient_roman",
+    "medieval",
+    "modern",
+    "celtic",
+    "ancestral_puebloan",
+    "nuragic",
+    "ancient_greek",
+    "roman",
+    "bronze-age",
+    "etruscan",
+    "middle-ages",
+    "byzantine",
+    "iron-age",
+    "mayan",
+    "ottoman",
+    "castro_culture",
+    "ancient_egyptian",
+    "korean",
+    "Nazca_culture",
+    "medieval_christianity",
+    "venetian",
+    "early_medieval"
+  ],
+  "type": "combo"
+}

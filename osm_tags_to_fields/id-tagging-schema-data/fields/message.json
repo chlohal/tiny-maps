@@ -1,0 +1,14 @@
+{
+  "key": "message",
+  "label": "Message",
+  "options": [
+    "commercial",
+    "opinions;non_profit",
+    "political",
+    "local",
+    "municipality",
+    "showbiz",
+    "commercial;local"
+  ],
+  "type": "combo"
+}

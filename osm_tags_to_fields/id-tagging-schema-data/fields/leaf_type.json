@@ -1,0 +1,19 @@
+{
+    "key": "leaf_type",
+    "type": "combo",
+    "label": "Leaf Type",
+    "strings": {
+        "options": {
+            "broadleaved": "Broadleaved",
+            "needleleaved": "Needleleaved",
+            "mixed": "Mixed",
+            "leafless": "Leafless"
+        }
+    },
+    "icons": {
+        "broadleaved": "maki-park",
+        "needleleaved": "roentgen-needleleaved_tree"
+    },
+    "autoSuggestions": false,
+    "customValues": false
+}

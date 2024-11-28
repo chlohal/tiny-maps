@@ -1,0 +1,15 @@
+{
+  "key": "boundary",
+  "label": "Type",
+  "options": [
+    "administrative",
+    "protected_area",
+    "postal_code",
+    "census",
+    "marker",
+    "forest_compartment",
+    "landuse",
+    "local_authority"
+  ],
+  "type": "combo"
+}

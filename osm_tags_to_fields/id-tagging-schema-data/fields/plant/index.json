@@ -1,0 +1,19 @@
+{
+  "key": "plant",
+  "label": "Plant",
+  "options": [
+    "tree",
+    "shrub",
+    "christmas_trees",
+    "trees",
+    "tree;shrub",
+    "flowers",
+    "flower;shrub",
+    "vegetable",
+    "wood",
+    "vanille",
+    "fruit_trees",
+    "shrub;tree"
+  ],
+  "type": "combo"
+}

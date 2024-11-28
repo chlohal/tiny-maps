@@ -1,0 +1,19 @@
+{
+    "icon": "temaki-bulldozer",
+    "geometry": [
+        "area"
+    ],
+    "fields": [
+        "name"
+    ],
+    "tags": {
+        "landuse": "brownfield"
+    },
+    "terms": [
+        "development",
+        "industrial",
+        "lot"
+    ],
+    "matchScore": 0.9,
+    "name": "Brownfield"
+}

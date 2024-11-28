@@ -1,0 +1,24 @@
+{
+    "icon": "maki-confectionery",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "fudge",
+        "lollipop",
+        "sugar",
+        "sweet"
+    ],
+    "tags": {
+        "shop": "confectionery"
+    },
+    "moreFields": [
+        "fhrs/id-GB"
+    ],
+    "name": "Candy Store",
+    "aliases": [
+        "Candy Shop",
+        "Confectionery Store"
+    ]
+}

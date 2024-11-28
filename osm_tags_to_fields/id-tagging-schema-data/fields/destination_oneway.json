@@ -1,0 +1,11 @@
+{
+  "caseSensitive": true,
+  "key": "destination",
+  "label": "{destination}",
+  "prerequisiteTag": {
+    "key": "oneway",
+    "value": "yes"
+  },
+  "snake_case": false,
+  "type": "text"
+}

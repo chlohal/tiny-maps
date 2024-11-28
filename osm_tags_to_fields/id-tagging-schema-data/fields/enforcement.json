@@ -1,0 +1,12 @@
+{
+  "key": "enforcement",
+  "label": "Type",
+  "options": [
+    "maxspeed",
+    "traffic_signals",
+    "toll",
+    "average_speed",
+    "access"
+  ],
+  "type": "combo"
+}

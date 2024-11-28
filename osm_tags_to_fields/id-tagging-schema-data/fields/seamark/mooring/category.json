@@ -1,0 +1,12 @@
+{
+  "key": "seamark:mooring:category",
+  "label": "Category",
+  "options": [
+    "dolphin",
+    "post",
+    "pile",
+    "buoy",
+    "bollard"
+  ],
+  "type": "combo"
+}

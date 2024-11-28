@@ -7,7 +7,7 @@ const PAGE_HEADER_SIZE: usize = 16;
 
 const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 3000;
 
-use crate::cache::{Cache, SizeEstimate};
+use crate::{cache::{Cache, SizeEstimate}, serialize_fast::MinimalSerdeFast};
 
 use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 
@@ -21,15 +21,19 @@ impl<const K: usize> DeserializeFromMinimal for PageId<K> {
         from: &'a mut R,
         _external_data: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        let mut bytes = [0u8; (usize::BITS / 8) as usize];
-        debug_assert!(bytes.len() <= 8);
-
-        from.read_exact(&mut bytes)?;
-
-        let inner = usize::from_le_bytes(bytes);
-
-        Ok(PageId(inner))
+        <usize as MinimalSerdeFast>::fast_deserialize_minimal(from, ()).map(PageId)
     }
+    
+    fn read_past<'a, 'd: 'a, R: Read>(
+        from: &'a mut R,
+        _external_data: Self::ExternalData<'d>,
+    ) -> std::io::Result<()> {
+        <usize as MinimalSerdeFast>::fast_seek_after(from)
+    }
+    
+    
+
+    
 }
 
 impl<const K: usize> SerializeMinimal for PageId<K> {

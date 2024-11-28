@@ -1,0 +1,31 @@
+{
+  "key": "diplomatic:services:",
+  "label": "Services",
+  "keys": [
+  "diplomatic:services:citizen_services",
+  "diplomatic:services:immigrant_visas",
+  "diplomatic:services:non-immigrant_visas",
+  "diplomatic:services:passport",
+  "diplomatic:services:consulate",
+  "diplomatic:services:visa",
+  "diplomatic:services:Notarial_Services",
+  "diplomatic:services:passeport",
+  "diplomatic:services:trade",
+  "diplomatic:services:visitor_visa",
+  "diplomatic:services:study_visa",
+  "diplomatic:services:culture",
+  "diplomatic:services:registry_office",
+  "diplomatic:services:Trade_and_Investment_British_Columbia",
+  "diplomatic:services:none",
+  "diplomatic:services:spouse_visa",
+  "diplomatic:services:Office_of_the_Quebec_Trade_Commissioner",
+  "diplomatic:services:non",
+  "diplomatic:services:maritime",
+  "diplomatic:services:Office_of_the_Alberta_Trade_Commissioner",
+  "diplomatic:services:dip",
+  "diplomatic:services:Office_of_th_Quebec_Trade_Commissioner",
+  "diplomatic:services:de",
+  "diplomatic:services:political_party"
+],
+  "type": "manyCombo"
+}

@@ -1,0 +1,24 @@
+{
+  "key": "gambling",
+  "label": "Games",
+  "options": [
+    "slot_machines",
+    "pachinko",
+    "lottery",
+    "yes",
+    "bingo",
+    "betting",
+    "pachinko;slot_machines",
+    "bingo;slot_machines",
+    "casino",
+    "mahjong",
+    "slot_machine",
+    "bookmaker",
+    "lottery;betting",
+    "betting;slot_machines",
+    "slot_machines;casino",
+    "slot_machines;betting",
+    "poker"
+  ],
+  "type": "semiCombo"
+}

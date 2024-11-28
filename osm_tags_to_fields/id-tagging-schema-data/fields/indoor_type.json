@@ -1,0 +1,13 @@
+{
+  "key": "indoor",
+  "label": "Type",
+  "options": [
+    "yes",
+    "room",
+    "no",
+    "wall",
+    "door",
+    "corridor"
+  ],
+  "type": "typeCombo"
+}

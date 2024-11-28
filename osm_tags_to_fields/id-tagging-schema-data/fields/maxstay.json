@@ -1,0 +1,22 @@
+{
+    "key": "maxstay",
+    "type": "combo",
+    "label": "Time Limit",
+    "options": [
+        "unlimited",
+        "no",
+        "15 minutes",
+        "30 minutes",
+        "45 minutes",
+        "1 hour",
+        "1.5 hours",
+        "2 hours",
+        "2.5 hours",
+        "3 hours",
+        "4 hours",
+        "1 day",
+        "2 days"
+    ],
+    "autoSuggestions": false,
+    "snake_case": false
+}

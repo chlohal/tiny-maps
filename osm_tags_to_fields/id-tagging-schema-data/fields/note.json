@@ -1,0 +1,9 @@
+{
+    "key": "note",
+    "type": "textarea",
+    "universal": true,
+    "label": "Note",
+    "terms": [
+        "comment"
+    ]
+}

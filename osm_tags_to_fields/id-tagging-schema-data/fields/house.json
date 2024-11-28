@@ -1,0 +1,10 @@
+{
+  "key": "house",
+  "label": "House Type",
+  "options": [
+    "terraced",
+    "semi-detached",
+    "detached"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,26 @@
+{
+  "key": "railway",
+  "label": "Type",
+  "options": [
+    "rail",
+    "switch",
+    "level_crossing",
+    "abandoned",
+    "signal",
+    "buffer_stop",
+    "milestone",
+    "crossing",
+    "platform",
+    "disused",
+    "stop",
+    "tram",
+    "station",
+    "subway",
+    "tram_level_crossing",
+    "tram_crossing",
+    "razed",
+    "narrow_gauge",
+    "tram_stop"
+  ],
+  "type": "typeCombo"
+}

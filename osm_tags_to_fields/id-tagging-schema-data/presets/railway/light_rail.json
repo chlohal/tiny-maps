@@ -1,0 +1,32 @@
+{
+    "icon": "temaki-light_rail",
+    "fields": [
+        "name",
+        "operator",
+        "structure",
+        "gauge",
+        "electrified",
+        "service_rail",
+        "usage_rail"
+    ],
+    "moreFields": [
+        "bridge/ref",
+        "covered_no",
+        "frequency_electrified",
+        "incline",
+        "maxspeed",
+        "voltage_electrified"
+    ],
+    "geometry": [
+        "line"
+    ],
+    "tags": {
+        "railway": "light_rail"
+    },
+    "terms": [
+        "light rail",
+        "streetcar",
+        "trolley"
+    ],
+    "name": "Light Rail Track"
+}

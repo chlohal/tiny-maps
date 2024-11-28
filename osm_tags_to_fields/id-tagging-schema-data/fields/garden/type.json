@@ -1,0 +1,15 @@
+{
+  "key": "garden:type",
+  "label": "Garden Type",
+  "options": [
+    "residential",
+    "private",
+    "community",
+    "landscaping",
+    "botanical",
+    "roof_garden",
+    "kitchen",
+    "street_side"
+  ],
+  "type": "combo"
+}

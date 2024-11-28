@@ -1,0 +1,15 @@
+{
+    "icon": "maki-golf",
+    "fields": [
+        "name",
+        "capacity",
+        "surface"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "golf": "driving_range"
+    },
+    "name": "Driving Range"
+}

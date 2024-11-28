@@ -1,0 +1,7 @@
+{
+  "caseSensitive": true,
+  "key": "network",
+  "label": "Network",
+  "snake_case": false,
+  "type": "text"
+}

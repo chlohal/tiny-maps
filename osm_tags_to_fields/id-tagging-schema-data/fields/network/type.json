@@ -1,0 +1,12 @@
+{
+  "key": "network:type",
+  "label": "Network Type",
+  "options": [
+    "node_network",
+    "basic_network"
+  ],
+  "prerequisiteTag": {
+    "key": "network"
+  },
+  "type": "combo"
+}

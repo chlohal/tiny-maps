@@ -1,0 +1,16 @@
+{
+    "key": "content",
+    "type": "combo",
+    "label": "Content",
+    "options": [
+        "silage",
+        "water",
+        "oil",
+        "fuel",
+        "slurry",
+        "gas",
+        "manure",
+        "sewage"
+    ],
+    "autoSuggestions": false
+}

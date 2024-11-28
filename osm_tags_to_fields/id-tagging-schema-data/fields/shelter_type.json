@@ -1,0 +1,20 @@
+{
+  "icons": {
+    "field_shelter": "temaki-horse_shelter",
+    "lean_to": "temaki-sleep_shelter",
+    "picnic_shelter": "temaki-picnic_shelter",
+    "public_transport": "temaki-transit_shelter"
+  },
+  "key": "shelter_type",
+  "label": "Type",
+  "options": [
+    "public_transport",
+    "picnic_shelter",
+    "gazebo",
+    "weather_shelter",
+    "lean_to",
+    "pavilion",
+    "basic_hut"
+  ],
+  "type": "combo"
+}

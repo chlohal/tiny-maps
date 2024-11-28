@@ -1,0 +1,12 @@
+{
+  "key": "lamp_mount",
+  "label": "Mount",
+  "options": [
+    "bent_mast",
+    "straight_mast",
+    "pole",
+    "high_mast",
+    "wall"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,12 @@
+{
+  "key": "route_master",
+  "label": "Type",
+  "options": [
+    "bus",
+    "train",
+    "tram",
+    "trolleybus",
+    "share_taxi"
+  ],
+  "type": "combo"
+}

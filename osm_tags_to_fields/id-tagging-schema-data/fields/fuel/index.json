@@ -1,0 +1,15 @@
+{
+  "key": "fuel",
+  "label": "Fuel",
+  "options": [
+    "wood",
+    "charcoal",
+    "electric",
+    "charcoal;wood",
+    "gas",
+    "coal",
+    "yes",
+    "no"
+  ],
+  "type": "combo"
+}

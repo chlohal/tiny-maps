@@ -1,0 +1,18 @@
+{
+  "key": "route",
+  "label": "Type",
+  "options": [
+    "bus",
+    "road",
+    "hiking",
+    "bicycle",
+    "foot",
+    "ferry",
+    "mtb",
+    "power",
+    "train",
+    "railway",
+    "piste"
+  ],
+  "type": "combo"
+}

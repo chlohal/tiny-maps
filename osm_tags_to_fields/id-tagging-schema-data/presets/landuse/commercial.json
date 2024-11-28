@@ -1,0 +1,22 @@
+{
+    "icon": "maki-suitcase",
+    "fields": [
+        "name"
+    ],
+    "moreFields": [
+        "{@templates/contact}",
+        "address"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "landuse": "commercial"
+    },
+    "terms": [
+        "depot",
+        "offices"
+    ],
+    "matchScore": 0.9,
+    "name": "Commercial Area"
+}

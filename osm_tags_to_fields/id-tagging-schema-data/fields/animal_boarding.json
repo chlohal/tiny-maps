@@ -1,0 +1,23 @@
+{
+  "key": "animal_boarding",
+  "label": "For Animals",
+  "options": [
+    "dog",
+    "horse",
+    "dog;cat",
+    "cat",
+    "cat;dog",
+    "yes",
+    "mammal",
+    "gallus",
+    "pig",
+    "unknown",
+    "bird",
+    "dog;cat;rabbit",
+    "duck",
+    "dog;cat;horse",
+    "dog;cat;small_animal",
+    "rabbit"
+  ],
+  "type": "semiCombo"
+}

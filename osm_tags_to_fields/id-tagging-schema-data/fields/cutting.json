@@ -1,0 +1,11 @@
+{
+  "key": "cutting",
+  "label": "Type",
+  "options": [
+    "yes",
+    "no"
+  ],
+  "placeholder": "Default",
+  "type": "typeCombo",
+  "usage": "group"
+}

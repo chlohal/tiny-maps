@@ -1,0 +1,7 @@
+{
+  "caseSensitive": true,
+  "key": "destination",
+  "label": "Destinations",
+  "snake_case": false,
+  "type": "text"
+}

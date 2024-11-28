@@ -1,0 +1,12 @@
+{
+  "key": "waterway",
+  "label": "Type",
+  "options": [
+    "stream",
+    "ditch",
+    "river",
+    "drain",
+    "canal"
+  ],
+  "type": "typeCombo"
+}

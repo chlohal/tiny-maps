@@ -1,0 +1,20 @@
+{
+    "icon": "maki-garden",
+    "fields": [
+        "operator"
+    ],
+    "moreFields": [
+        "address"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "landuse": "flowerbed"
+    },
+    "terms": [
+        "floral garden",
+        "flower garden"
+    ],
+    "name": "Flowerbed"
+}

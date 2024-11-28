@@ -1,0 +1,18 @@
+{
+  "key": "flag:type",
+  "label": "Flag Type",
+  "options": [
+    "national",
+    "advertising",
+    "regional",
+    "governmental",
+    "municipal",
+    "organisation",
+    "commercial",
+    "military",
+    "religious",
+    "national;regional",
+    "national;organisation"
+  ],
+  "type": "combo"
+}

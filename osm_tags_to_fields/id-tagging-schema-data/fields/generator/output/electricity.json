@@ -1,0 +1,15 @@
+{
+  "caseSensitive": true,
+  "key": "generator:output:electricity",
+  "label": "Power Output",
+  "options": [
+    "yes",
+    "small_installation",
+    "2 MW",
+    "1.5 MW",
+    "2.3 MW"
+  ],
+  "placeholder": "50 MW, 100 MW, 200 MW...",
+  "snake_case": false,
+  "type": "typeCombo"
+}

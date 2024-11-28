@@ -1,0 +1,7 @@
+{
+  "caseSensitive": true,
+  "key": "target",
+  "label": "Target",
+  "snake_case": false,
+  "type": "text"
+}

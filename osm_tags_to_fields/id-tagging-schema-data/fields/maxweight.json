@@ -1,0 +1,6 @@
+{
+  "key": "maxweight",
+  "label": "Weight Limit",
+  "snake_case": false,
+  "type": "number"
+}

@@ -1,0 +1,27 @@
+{
+  "key": "area:highway",
+  "label": "Type",
+  "options": [
+    "footway",
+    "traffic_island",
+    "residential",
+    "service",
+    "tertiary",
+    "yes",
+    "secondary",
+    "emergency",
+    "primary",
+    "cycleway",
+    "pedestrian",
+    "parking_space",
+    "motorway",
+    "track",
+    "steps",
+    "unclassified",
+    "path",
+    "bus_stop",
+    "prohibited",
+    "shoulder"
+  ],
+  "type": "typeCombo"
+}

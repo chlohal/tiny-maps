@@ -1,0 +1,30 @@
+{
+    "icon": "temaki-oil_well",
+    "fields": [
+        "name",
+        "ref",
+        "operator",
+        "substance"
+    ],
+    "moreFields": [
+        "gnis/feature_id-US"
+    ],
+    "geometry": [
+        "point",
+        "vertex"
+    ],
+    "terms": [
+        "drilling rig",
+        "oil derrick",
+        "oil drill",
+        "oil horse",
+        "oil rig",
+        "oil pump",
+        "petroleum well",
+        "pumpjack"
+    ],
+    "tags": {
+        "man_made": "petroleum_well"
+    },
+    "name": "Oil Well"
+}

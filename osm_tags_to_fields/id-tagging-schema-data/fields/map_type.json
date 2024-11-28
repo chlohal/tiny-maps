@@ -1,0 +1,14 @@
+{
+  "key": "map_type",
+  "label": "Type",
+  "options": [
+    "topo",
+    "scheme",
+    "street",
+    "toposcope",
+    "hiking",
+    "yes",
+    "citymap"
+  ],
+  "type": "typeCombo"
+}

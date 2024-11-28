@@ -1,0 +1,14 @@
+{
+    "icon": "fas-key",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "craft": "key_cutter"
+    },
+    "terms": [
+        "key duplication"
+    ],
+    "name": "Key Cutter"
+}

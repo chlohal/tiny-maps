@@ -1,0 +1,12 @@
+{
+  "key": "turning_circle",
+  "label": "Shape",
+  "options": [
+    "circle",
+    "knuckle",
+    "square",
+    "hammer",
+    "oval"
+  ],
+  "type": "combo"
+}

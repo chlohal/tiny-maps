@@ -1,0 +1,17 @@
+{
+    "icon": "temaki-trench",
+    "geometry": [
+        "line"
+    ],
+    "tags": {
+        "barrier": "ditch"
+    },
+    "name": "Trench",
+    "aliases": [
+        "Ditch"
+    ],
+    "terms": [
+        "ha-ha"
+    ],
+    "matchScore": 0.25
+}

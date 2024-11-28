@@ -1,0 +1,17 @@
+{
+  "key": "line_management",
+  "label": "Line Management",
+  "options": [
+    "straight",
+    "branch",
+    "transition",
+    "termination",
+    "split"
+  ],
+  "terms": [
+    "branching",
+    "line topology",
+    "termination"
+  ],
+  "type": "combo"
+}

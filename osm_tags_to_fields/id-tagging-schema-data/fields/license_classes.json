@@ -1,0 +1,31 @@
+{
+  "key": "license_classes",
+  "label": "Classes of Driver’s License",
+  "options": [
+  "A",
+  "A, B",
+  "A1",
+  "A2",
+  "AM",
+  "B",
+  "B1",
+  "BE",
+  "C",
+  "C1",
+  "C1E",
+  "C2",
+  "CE",
+  "D",
+  "D1",
+  "D1E",
+  "DE",
+  "E",
+  "L",
+  "all",
+  "be",
+  "y",
+  "yes",
+  "Alle Klassen"
+],
+  "type": "semiCombo"
+}

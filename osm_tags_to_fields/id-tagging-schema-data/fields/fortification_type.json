@@ -1,0 +1,16 @@
+{
+  "key": "fortification_type",
+  "label": "Fortification Type",
+  "options": [
+    "ringfort",
+    "hill_fort",
+    "pa",
+    "sconce",
+    "motte"
+  ],
+  "prerequisiteTag": {
+    "key": "archaeological_site",
+    "value": "fortification"
+  },
+  "type": "combo"
+}

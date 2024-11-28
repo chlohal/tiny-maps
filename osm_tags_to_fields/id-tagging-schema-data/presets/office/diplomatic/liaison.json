@@ -1,0 +1,24 @@
+{
+    "icon": "temaki-embassy",
+    "fields": [
+        "name",
+        "liaison",
+        "{office/diplomatic}"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "office": "diplomatic",
+        "diplomatic": "liaison"
+    },
+    "reference": {
+        "key": "diplomatic",
+        "value": "liaison"
+    },
+    "terms": [
+        "diplomatic mission"
+    ],
+    "name": "Liaison Office"
+}

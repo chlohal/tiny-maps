@@ -1,0 +1,13 @@
+{
+  "key": "camera:mount",
+  "label": "Camera Mount",
+  "options": [
+    "wall",
+    "pole",
+    "ceiling",
+    "street_lamp",
+    "building",
+    "traffic_signals"
+  ],
+  "type": "combo"
+}

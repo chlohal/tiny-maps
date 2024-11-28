@@ -1,0 +1,27 @@
+{
+  "key": "grape_variety",
+  "label": "Grape Varieties",
+  "options": [
+    "Grape",
+    "Montepulciano_d'Abruzzo",
+    "Chardonnay",
+    "Pinot_noir",
+    "Merlot",
+    "Silvaner",
+    "Riesling",
+    "Weißburgunder",
+    "Syrah",
+    "Zinfandel",
+    "hondarrabi_zuri",
+    "Cabernet_Sauvignon",
+    "meunier",
+    "Malbec",
+    "Tintilia_del_Molise",
+    "Spätburgunder",
+    "Carmenere",
+    "pinot_gris",
+    "solaris",
+    "cabernet franc"
+  ],
+  "type": "semiCombo"
+}

@@ -1,0 +1,15 @@
+[package]
+name = "osm_tags_to_fields"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+osmpbfreader = "0.16.1"
+minimal_storage = { path = "../storage" }
+osm_structures = { path = "../osm_structures" }
+osm_value_atom = { path = "../osm_value_atom" }
+
+[build-dependencies]
+osm_schema_builder = { path = "../osm_schema_builder" }

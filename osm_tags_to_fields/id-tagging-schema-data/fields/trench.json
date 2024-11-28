@@ -1,0 +1,8 @@
+{
+  "key": "trench",
+  "label": "Type",
+  "options": [
+    "dugout"
+  ],
+  "type": "combo"
+}

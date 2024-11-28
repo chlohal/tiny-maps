@@ -1,0 +1,10 @@
+{
+  "key": "stile",
+  "label": "Type",
+  "options": [
+    "stepover",
+    "squeezer",
+    "ladder"
+  ],
+  "type": "combo"
+}

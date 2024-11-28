@@ -1,0 +1,9 @@
+{
+  "key": "generator:type",
+  "label": "Type",
+  "options": [
+    "solar_photovoltaic_panel",
+    "horizontal_axis"
+  ],
+  "type": "combo"
+}

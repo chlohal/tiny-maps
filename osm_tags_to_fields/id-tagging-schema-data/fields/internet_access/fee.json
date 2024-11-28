@@ -1,0 +1,21 @@
+{
+    "key": "internet_access:fee",
+    "type": "combo",
+    "label": "Internet Access Fee",
+    "strings": {
+        "options": {
+            "no": "Free",
+            "yes": "Paid",
+            "customers": "Customers Only"
+        }
+    },
+    "autoSuggestions": false,
+    "customValues": false,
+    "prerequisiteTag": {
+        "key": "internet_access",
+        "valueNot": "no"
+    },
+    "terms": [
+        "wifi fee"
+    ]
+}

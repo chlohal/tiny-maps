@@ -1,0 +1,12 @@
+{
+  "key": "pipeline",
+  "label": "Type",
+  "options": [
+    "substation",
+    "valve",
+    "marker",
+    "pig_launcher",
+    "surge_tank"
+  ],
+  "type": "typeCombo"
+}

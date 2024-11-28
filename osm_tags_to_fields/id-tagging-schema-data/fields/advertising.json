@@ -1,0 +1,14 @@
+{
+  "key": "advertising",
+  "label": "Type",
+  "options": [
+    "billboard",
+    "poster_box",
+    "column",
+    "board",
+    "totem",
+    "sign",
+    "flag"
+  ],
+  "type": "typeCombo"
+}

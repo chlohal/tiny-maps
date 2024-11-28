@@ -1,0 +1,37 @@
+{
+    "icon": "maki-horse-riding",
+    "fields": [
+        "name",
+        "ref_route",
+        "operator",
+        "network_horse",
+        "network/type",
+        "from",
+        "to",
+        "via"
+    ],
+    "moreFields": [
+        "ascent",
+        "colour",
+        "descent",
+        "distance"
+    ],
+    "geometry": [
+        "relation"
+    ],
+    "tags": {
+        "type": "route",
+        "route": "horse"
+    },
+    "reference": {
+        "key": "route",
+        "value": "horse"
+    },
+    "terms": [
+        "horse riding route",
+        "horse trail",
+        "riding route",
+        "trail riding"
+    ],
+    "name": "Horseback Riding Route"
+}

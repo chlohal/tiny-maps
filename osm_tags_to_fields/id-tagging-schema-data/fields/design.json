@@ -1,0 +1,21 @@
+{
+  "key": "design",
+  "label": "Design",
+  "options": [
+    "h-frame",
+    "three-level",
+    "delta",
+    "triangle",
+    "asymmetric",
+    "barrel",
+    "one-level",
+    "monopolar",
+    "flag",
+    "donau",
+    "guyed_v-frame",
+    "guyed_h-frame",
+    "two-level"
+  ],
+  "type": "combo",
+  "usage": "manual"
+}

@@ -1,0 +1,19 @@
+{
+    "icon": "temaki-catering",
+    "fields": [
+        "name",
+        "cuisine",
+        "{craft}"
+    ],
+    "moreFields": [
+        "fhrs/id-GB"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "craft": "caterer"
+    },
+    "name": "Caterer"
+}

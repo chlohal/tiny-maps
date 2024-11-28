@@ -1,0 +1,14 @@
+{
+  "key": "studio",
+  "label": "Type",
+  "options": [
+    "radio",
+    "television",
+    "video",
+    "audio",
+    "music",
+    "cinema",
+    "photography"
+  ],
+  "type": "combo"
+}

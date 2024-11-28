@@ -1,0 +1,8 @@
+{
+  "key": "wall",
+  "label": "Type",
+  "options": [
+    "no"
+  ],
+  "type": "combo"
+}

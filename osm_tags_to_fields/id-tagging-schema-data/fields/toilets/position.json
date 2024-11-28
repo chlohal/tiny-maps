@@ -1,0 +1,13 @@
+{
+  "key": "toilets:position",
+  "label": "Positions",
+  "options": [
+    "outside",
+    "squat",
+    "seated",
+    "urinal",
+    "none",
+    "inside"
+  ],
+  "type": "semiCombo"
+}

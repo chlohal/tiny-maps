@@ -1,0 +1,12 @@
+{
+  "key": "information",
+  "label": "Type",
+  "options": [
+    "guidepost",
+    "board",
+    "map",
+    "route_marker",
+    "office"
+  ],
+  "type": "typeCombo"
+}

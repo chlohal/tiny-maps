@@ -1,0 +1,7 @@
+{
+  "caseSensitive": true,
+  "key": "via",
+  "label": "Via",
+  "snake_case": false,
+  "type": "text"
+}

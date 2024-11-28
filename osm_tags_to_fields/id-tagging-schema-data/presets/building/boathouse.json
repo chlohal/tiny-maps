@@ -1,0 +1,16 @@
+{
+    "icon": "maki-harbor",
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "building": "boathouse"
+    },
+    "matchScore": 0.5,
+    "terms": [
+        "boat house",
+        "boat storage",
+        "rowing"
+    ],
+    "name": "Boathouse"
+}

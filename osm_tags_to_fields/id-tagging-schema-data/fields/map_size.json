@@ -1,0 +1,13 @@
+{
+  "key": "map_size",
+  "label": "Coverage",
+  "options": [
+    "region",
+    "site",
+    "city",
+    "local",
+    "park",
+    "area"
+  ],
+  "type": "typeCombo"
+}

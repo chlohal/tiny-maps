@@ -1,0 +1,12 @@
+{
+    "icon": "roentgen-slide",
+    "geometry": [
+        "point",
+        "line",
+        "area"
+    ],
+    "tags": {
+        "playground": "slide"
+    },
+    "name": "Slide"
+}

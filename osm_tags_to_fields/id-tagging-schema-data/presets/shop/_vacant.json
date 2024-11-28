@@ -1,0 +1,16 @@
+{
+    "icon": "maki-shop",
+    "fields": [
+        "name",
+        "address",
+        "building_area_yes"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "shop": "vacant"
+    },
+    "name": "Vacant Shop"
+}

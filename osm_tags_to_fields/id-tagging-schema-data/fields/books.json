@@ -1,0 +1,30 @@
+{
+  "key": "books",
+  "label": "Type of Books",
+  "options": [
+    "comic",
+    "antiquarian",
+    "religion",
+    "children",
+    "adults",
+    "yes",
+    "academic",
+    "comics",
+    "textbook",
+    "anarchism",
+    "feminist",
+    "all",
+    "art",
+    "erotic",
+    "used",
+    "law",
+    "christian",
+    "second_hand",
+    "manga",
+    "music",
+    "travel",
+    "english",
+    "language"
+  ],
+  "type": "semiCombo"
+}

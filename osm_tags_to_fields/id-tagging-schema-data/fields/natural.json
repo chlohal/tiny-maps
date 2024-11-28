@@ -1,0 +1,18 @@
+{
+  "key": "natural",
+  "label": "Natural",
+  "options": [
+    "tree",
+    "water",
+    "wood",
+    "scrub",
+    "wetland",
+    "grassland",
+    "tree_row",
+    "coastline",
+    "bare_rock",
+    "peak",
+    "cliff"
+  ],
+  "type": "typeCombo"
+}

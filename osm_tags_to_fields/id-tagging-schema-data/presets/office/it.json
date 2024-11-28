@@ -1,0 +1,18 @@
+{
+    "icon": "maki-suitcase",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "office": "it"
+    },
+    "terms": [
+        "computer",
+        "information",
+        "it office",
+        "software",
+        "technology"
+    ],
+    "name": "Information Technology Office"
+}

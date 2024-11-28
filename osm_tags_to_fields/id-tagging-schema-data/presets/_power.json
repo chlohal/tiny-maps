@@ -1,0 +1,18 @@
+{
+    "icon": "temaki-power",
+    "geometry": [
+        "point",
+        "vertex",
+        "line",
+        "area"
+    ],
+    "tags": {
+        "power": "*"
+    },
+    "fields": [
+        "power",
+        "operator"
+    ],
+    "searchable": false,
+    "name": "Power Feature"
+}

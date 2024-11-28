@@ -1,0 +1,11 @@
+{
+    "icon": "maki-marker-stroked",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "place": "square"
+    },
+    "name": "Square"
+}

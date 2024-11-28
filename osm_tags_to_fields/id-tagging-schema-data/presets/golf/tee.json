@@ -1,0 +1,19 @@
+{
+    "icon": "roentgen-golf_tee",
+    "fields": [
+        "tee",
+        "surface"
+    ],
+    "geometry": [
+        "vertex",
+        "area"
+    ],
+    "tags": {
+        "golf": "tee"
+    },
+    "name": "Tee Box",
+    "aliases": [
+        "Tee",
+        "Teeing Ground"
+    ]
+}

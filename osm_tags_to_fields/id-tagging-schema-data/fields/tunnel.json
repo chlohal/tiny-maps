@@ -1,0 +1,12 @@
+{
+  "key": "tunnel",
+  "label": "Type",
+  "options": [
+    "culvert",
+    "yes",
+    "building_passage"
+  ],
+  "placeholder": "Default",
+  "type": "typeCombo",
+  "usage": "group"
+}

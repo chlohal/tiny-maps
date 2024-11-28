@@ -1,0 +1,12 @@
+{
+  "key": "boules",
+  "label": "Type",
+  "options": [
+    "petanque",
+    "lyonnaise",
+    "bocce",
+    "boule_de_fort",
+    "yes"
+  ],
+  "type": "typeCombo"
+}

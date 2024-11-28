@@ -1,0 +1,14 @@
+{
+  "key": "townhall:type",
+  "label": "Type",
+  "options": [
+    "village",
+    "city",
+    "barangay",
+    "municipality",
+    "town",
+    "Mairie de commune déléguée",
+    "district"
+  ],
+  "type": "combo"
+}

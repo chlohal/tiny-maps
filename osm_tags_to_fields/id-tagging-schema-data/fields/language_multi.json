@@ -1,0 +1,8 @@
+{
+  "key": "language:",
+  "label": "Languages",
+  "options": [
+    "ar", "en", "de", "fr", "ru", "ro", "es", "tr", "pl", "it", "be", "et", "others"
+  ],
+  "type": "multiCombo"
+}

@@ -12,8 +12,6 @@ mod test;
 
 pub const PAGE_SIZE: usize = 8;
 
-const NODE_SATURATION_POINT: usize = 8000;
-
 pub use structure::StoredTree;
 pub use tree::*;
 use tree_traits::{MultidimensionalKey, MultidimensionalValue};

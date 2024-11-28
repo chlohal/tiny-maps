@@ -1,0 +1,28 @@
+{
+  "key": "building:material",
+  "label": "Material",
+  "options": [
+    "brick",
+    "cement_block",
+    "plaster",
+    "wood",
+    "concrete",
+    "hard",
+    "block",
+    "metal",
+    "glass",
+    "stone",
+    "plastered",
+    "mud",
+    "steel",
+    "metal_plates",
+    "concrete masonry unit",
+    "plastic",
+    "mixed",
+    "masonry",
+    "light",
+    "tin",
+    "timber_framing"
+  ],
+  "type": "combo"
+}

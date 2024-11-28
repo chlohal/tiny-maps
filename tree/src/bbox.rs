@@ -89,6 +89,13 @@ impl MinimalSerdeFast for BoundingBox<i32> {
             y_end: i32::fast_deserialize_minimal(from, external_data)?,
         })
     }
+    
+    fn fast_seek_after<R: std::io::Read>(from: &mut R) -> std::io::Result<()> {
+        i32::fast_seek_after(from)?;
+        i32::fast_seek_after(from)?;
+        i32::fast_seek_after(from)?;
+        i32::fast_seek_after(from)
+    }
 }
 
 impl<T: ToVarint + PartialEq + Copy> SerializeMinimal for BoundingBox<T> {

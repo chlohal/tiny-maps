@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use crate::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
+use crate::serialize_min::{DeserializeFromMinimal, MinimalSerializedSeek, SerializeMinimal};
 
 pub trait MinimalSerdeFast: SerializeMinimal + DeserializeFromMinimal {
     fn fast_minimally_serialize<'a, 's: 'a, W: Write>(
@@ -13,6 +13,8 @@ pub trait MinimalSerdeFast: SerializeMinimal + DeserializeFromMinimal {
         from: &'a mut R,
         external_data: <Self as DeserializeFromMinimal>::ExternalData<'d>,
     ) -> Result<Self, std::io::Error>;
+
+    fn fast_seek_after<R: std::io::Read>(from: &mut R) -> std::io::Result<()>;
 }
 
 #[repr(transparent)]
@@ -54,6 +56,19 @@ impl<T: MinimalSerdeFast> DeserializeFromMinimal for FastMinSerde<T> {
     ) -> Result<Self, std::io::Error> {
         T::fast_deserialize_minimal(from, external_data).map(|x| FastMinSerde(x))
     }
+    
+    fn read_past<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        _external_data: Self::ExternalData<'d>,
+    ) -> std::io::Result<()> {
+        T::fast_seek_after(from)
+    }
+}
+
+impl<T: MinimalSerdeFast> MinimalSerializedSeek for FastMinSerde<T> {
+    fn seek_past<R: std::io::Read>(from: &mut R) -> std::io::Result<()> {
+        T::fast_seek_after(from)
+    }
 }
 
 impl<T: MinimalSerdeFast> From<T> for FastMinSerde<T> {
@@ -84,9 +99,14 @@ macro_rules! impl_fast_primitive_serde {
 
                     Ok($typ::from_be_bytes(a))
                 }
+
+                fn fast_seek_after<R: std::io::Read>(from: &mut R) -> std::io::Result<()> {
+                    from.read_exact(&mut [0; std::mem::size_of::<$typ>()])?;
+                    Ok(())
+                }
             }
         )*
     };
 }
 
-impl_fast_primitive_serde!{i8, u8, i16, u16, i32, u32, i64, u64}
+impl_fast_primitive_serde!{i8, u8, i16, u16, i32, u32, i64, u64, usize}

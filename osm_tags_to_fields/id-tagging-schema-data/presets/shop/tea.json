@@ -1,0 +1,14 @@
+{
+    "icon": "maki-teahouse",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "moreFields": [
+        "fhrs/id-GB"
+    ],
+    "tags": {
+        "shop": "tea"
+    },
+    "name": "Tea Store"
+}

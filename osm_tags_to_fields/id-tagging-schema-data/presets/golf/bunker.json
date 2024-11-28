@@ -1,0 +1,19 @@
+{
+    "icon": "maki-golf",
+    "fields": [
+        "surface"
+    ],
+    "geometry": [
+        "area"
+    ],
+    "tags": {
+        "golf": "bunker"
+    },
+    "terms": [
+        "hazard"
+    ],
+    "aliases": [
+        "Bunker"
+    ],
+    "name": "Sand Trap"
+}

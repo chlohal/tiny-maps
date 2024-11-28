@@ -1,0 +1,18 @@
+{
+    "icon": "temaki-sandbox",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "playground": "sandpit"
+    },
+    "terms": [
+        "sandbox",
+        "sandpit"
+    ],
+    "name": "Play Sandbox",
+    "aliases": [
+        "Play Sandpit"
+    ]
+}

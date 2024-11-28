@@ -1,0 +1,12 @@
+{
+  "default": "yes",
+  "key": "building:part",
+  "label": "Building Part",
+  "options": [
+    "yes",
+    "roof",
+    "apartments",
+    "house"
+  ],
+  "type": "combo"
+}

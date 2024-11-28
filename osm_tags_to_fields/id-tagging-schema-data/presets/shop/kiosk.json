@@ -1,0 +1,21 @@
+{
+    "icon": "fas-store",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "shop": "kiosk"
+    },
+    "terms": [
+        "beverages",
+        "cigarettes",
+        "mall kiosk",
+        "newsagent",
+        "newspaper",
+        "newsstand",
+        "snacks",
+        "sweets"
+    ],
+    "name": "Kiosk"
+}

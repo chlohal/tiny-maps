@@ -1,0 +1,15 @@
+{
+  "key": "siren:purpose",
+  "label": "Purpose",
+  "options": [
+    "civil_defense",
+    "fire",
+    "tornado",
+    "fire_department",
+    "civil_defense;tornado",
+    "fire;civil_defense",
+    "tsunami",
+    "civil_defense;fire"
+  ],
+  "type": "combo"
+}

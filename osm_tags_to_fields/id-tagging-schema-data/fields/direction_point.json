@@ -1,0 +1,10 @@
+{
+    "key": "direction",
+    "type": "number",
+    "label": "{direction}",
+    "placeholder": "45, 90, 180, 270",
+    "increment": 5,
+    "geometry": [
+        "point"
+    ]
+}

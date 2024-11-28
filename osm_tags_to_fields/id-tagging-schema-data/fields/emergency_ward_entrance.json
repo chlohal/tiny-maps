@@ -1,0 +1,10 @@
+{
+  "key": "emergency_ward_entrance",
+  "label": "Type",
+  "options": [
+    "rescue_service",
+    "all",
+    "walk-in"
+  ],
+  "type": "combo"
+}

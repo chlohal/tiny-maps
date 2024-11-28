@@ -1,0 +1,11 @@
+[package]
+name = "osm_tag_compression"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+osm_structures = { path = "../osm_structures" }
+minimal_storage = { path = "../storage" }
+osm_value_atom = { path = "../osm_value_atom" }
+osmpbfreader = "0.16.1"
+osm_tags_to_fields = { path = "../osm_tags_to_fields" }

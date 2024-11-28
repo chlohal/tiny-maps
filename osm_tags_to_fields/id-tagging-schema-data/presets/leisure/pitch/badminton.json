@@ -1,0 +1,19 @@
+{
+    "icon": "maki-tennis",
+    "geometry": [
+        "area",
+        "point"
+    ],
+    "tags": {
+        "leisure": "pitch",
+        "sport": "badminton"
+    },
+    "reference": {
+        "key": "sport",
+        "value": "badminton"
+    },
+    "terms": [
+        "badminton net"
+    ],
+    "name": "Badminton Court"
+}

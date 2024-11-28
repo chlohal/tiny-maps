@@ -1,0 +1,17 @@
+{
+    "icon": "temaki-fish_cleaning",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "aliases": [
+        "Fishmonger"
+    ],
+    "tags": {
+        "shop": "seafood"
+    },
+    "moreFields": [
+        "fhrs/id-GB"
+    ],
+    "name": "Seafood Shop"
+}

@@ -1,0 +1,5 @@
+{
+  "key": "voltage",
+  "label": "Voltage",
+  "type": "number"
+}

@@ -1,0 +1,24 @@
+{
+  "key": "except",
+  "label": "Exceptions",
+  "options": [
+    "bicycle",
+    "psv",
+    "bus",
+    "emergency",
+    "mofa",
+    "agricultural",
+    "residents",
+    "motorcycle",
+    "hgv",
+    "destination",
+    "motorcar",
+    "psv;bicycle",
+    "moped",
+    "motorcycle;bicycle",
+    "school_bus",
+    "taxi",
+    "motorcycle;bicycle;mofa;moped"
+  ],
+  "type": "combo"
+}

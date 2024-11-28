@@ -1,0 +1,16 @@
+{
+    "icon": "maki-roadblock",
+    "geometry": [
+        "vertex"
+    ],
+    "fields": [
+        "direction_vertex"
+    ],
+    "tags": {
+        "railway": "derail"
+    },
+    "terms": [
+        "derailer"
+    ],
+    "name": "Railway Derailer"
+}

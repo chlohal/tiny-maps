@@ -1,0 +1,15 @@
+{
+  "key": "type",
+  "label": "Type",
+  "options": [
+    "multipolygon",
+    "restriction",
+    "route",
+    "boundary",
+    "associatedStreet",
+    "public_transport",
+    "site",
+    "destination_sign"
+  ],
+  "type": "combo"
+}

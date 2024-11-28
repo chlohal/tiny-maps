@@ -1,0 +1,24 @@
+{
+    "icon": "temaki-poster_box",
+    "fields": [
+        "{advertising}",
+        "support"
+    ],
+    "moreFields": [
+        "{advertising}",
+        "direction"
+    ],
+    "geometry": [
+        "point",
+        "line"
+    ],
+    "tags": {
+        "advertising": "poster_box"
+    },
+    "terms": [
+        "ad",
+        "advertising",
+        "spam"
+    ],
+    "name": "Poster Box"
+}

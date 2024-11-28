@@ -1,0 +1,18 @@
+{
+  "key": "guest_house",
+  "label": "Type",
+  "options": [
+    "bed_and_breakfast",
+    "guest_house",
+    "agritourism",
+    "hostel",
+    "pension",
+    "student_accomodation",
+    "apartment",
+    "house",
+    "self_catering",
+    "albergue",
+    "hotel"
+  ],
+  "type": "combo"
+}

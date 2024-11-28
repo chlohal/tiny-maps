@@ -1,3 +1,4 @@
+use osm_value_atom::LiteralValue;
 use osmpbfreader::NodeId;
 
 use crate::compressor::tag_compressing::{
@@ -6,9 +7,9 @@ use crate::compressor::tag_compressing::{
             InlinedTags,
         };
 
-use minimal_storage::varint::ToVarint;
+use minimal_storage::{pooled_storage::Pool, varint::ToVarint};
 
-use osm_literals::{literal_value::LiteralValue, literal::Literal, pool::LiteralPool};
+use osm_structures::literal::Literal;
 
 use tree::bbox::BoundingBox;
 
@@ -24,7 +25,7 @@ pub fn osm_node_to_compressed_node(node: osmpbfreader::Node) -> CompressedOsmDat
 
 pub fn serialize_node<W: std::io::Write>(
     write_to: &mut W,
-    external_data: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+    external_data: &mut (Pool<Literal>, Pool<LiteralValue>),
     id: &NodeId,
     tags: &InlinedTags<tag_compressing::node::Node>,
 ) -> Result<(), std::io::Error> {
@@ -44,7 +45,7 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
 
     //1: node
     //0: without any uninlined tags
-    //0: has exactly 1 parent? (enables use of next 2 bits for niche-filling)
+    //0: has exactly 1 parent.unwrap() (enables use of next 2 bits for niche-filling)
     //00: start with no parents (represent 0,2,3,more. 0b00 -> 0, 0b01 -> 2; use 0b11 to indicate greater)
     //    if HasExactlyOneParent, then this controls the length (bytes) of the relative pointer to the parent
     //0: 0 if HasSingleInlinedTags. The 1 option would free up the next 3 bits, but isn't used for anything currently.
@@ -63,19 +64,19 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
         typ |= tag as u8;
     }
 
-    write_to.write_all(&[typ])?;
+    write_to.write_all(&[typ]).unwrap();
     id.0.write_varint(write_to)
 }
 
 fn write_node_with_uninlined_tags<W: std::io::Write>(
     write_to: &mut W,
-    values: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+    (literals, values): &mut (Pool<Literal>, Pool<LiteralValue>),
     tags: &InlinedTags<tag_compressing::node::Node>,
 ) -> std::io::Result<()> {
     //header layout:
     //1: node
     //1: with some uninlined tags
-    //0: has exactly 1 parent? (enables use of next 2 bits for niche-filling)
+    //0: has exactly 1 parent.unwrap() (enables use of next 2 bits for niche-filling)
     //00: start with no parents (represent 0,2,3,more. 0b00 -> 0, 0b01 -> 2; use 0b11 to indicate greater)
     //    if HasExactlyOneParent, then this controls the length (bytes + 1) of the relative pointer to the parent
     //0000: number of non-inlined tags. 0b1111 => More
@@ -120,46 +121,46 @@ fn write_node_with_uninlined_tags<W: std::io::Write>(
         blob[0] |= non_inlined_tags.len() as u8;
     } else {
         blob[0] |= 0b1111;
-        non_inlined_tags.len().write_varint(&mut blob)?;
+        non_inlined_tags.len().write_varint(&mut blob).unwrap();
     }
 
     if let Some(address) = &multiple_inlined.address {
-        let id = LiteralPool::<Literal>::insert(values, &address)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<Literal>::insert(literals, &address, values).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b1000_0000;
     }
 
     if let Some(public_transit) = &multiple_inlined.public_transit {
-        let id = LiteralPool::<Literal>::insert(values, &public_transit)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<Literal>::insert(literals, &public_transit, values).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b0100_0000;
     }
 
     if let Some(shop) = &multiple_inlined.shop {
-        let id = LiteralPool::<Literal>::insert(values, &shop)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<Literal>::insert(literals, shop, values).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b0010_0000;
     }
 
     if let Some(name) = &multiple_inlined.name {
-        let id = LiteralPool::<LiteralValue>::insert(&mut values.1, &name)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<LiteralValue>::insert(values, &name,()).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b0001_0000;
     }
 
     if let Some(contact) = &multiple_inlined.contact {
-        let id = LiteralPool::<Literal>::insert(values, &contact)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<Literal>::insert(literals, &contact, values).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b0000_0100;
     }
     if let Some(place) = &multiple_inlined.place {
-        let id = LiteralPool::<LiteralValue>::insert(&mut values.1, &place)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<LiteralValue>::insert(values, &place, ()).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b0000_0010;
     }
     if let Some(operator) = &multiple_inlined.operator {
-        let id = LiteralPool::<LiteralValue>::insert(&mut values.1, &operator)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<LiteralValue>::insert(values, &operator, ()).unwrap();
+        id.write_varint(&mut blob).unwrap();
         tags_byte |= 0b0000_0001;
     }
 
@@ -167,8 +168,8 @@ fn write_node_with_uninlined_tags<W: std::io::Write>(
     blob[1] = tags_byte;
 
     for taglit in non_inlined_tags {
-        let id = LiteralPool::<Literal>::insert(values, &taglit)?;
-        id.write_varint(&mut blob)?;
+        let id = Pool::<Literal>::insert(literals, &taglit, values).unwrap();
+        id.write_varint(&mut blob).unwrap();
     }
 
     write_to.write_all(&blob)

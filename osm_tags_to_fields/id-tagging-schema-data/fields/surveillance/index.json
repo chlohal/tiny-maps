@@ -1,0 +1,12 @@
+{
+  "key": "surveillance",
+  "label": "Surveillance Kind",
+  "options": [
+    "outdoor",
+    "public",
+    "indoor",
+    "traffic",
+    "yes"
+  ],
+  "type": "combo"
+}

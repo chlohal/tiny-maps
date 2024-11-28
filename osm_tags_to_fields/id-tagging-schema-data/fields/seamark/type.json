@@ -1,0 +1,42 @@
+{
+  "key": "seamark:type",
+  "label": "Seamark",
+  "options": [
+    "rock",
+    "mooring",
+    "buoy_lateral",
+    "beacon_lateral",
+    "notice",
+    "light_minor",
+    "harbour",
+    "recommended_track",
+    "pile",
+    "landmark",
+    "beacon_special_purpose",
+    "gate",
+    "buoy_special_purpose",
+    "beacon_isolated_danger",
+    "pipeline_submarine",
+    "distance_mark",
+    "buoy_cardinal",
+    "small_craft_facility",
+    "bridge",
+    "obstruction",
+    "cable_submarine",
+    "shoreline_construction",
+    "wreck",
+    "berth",
+    "marine_farm",
+    "anchorage",
+    "light_major",
+    "restricted_area",
+    "navigation_line",
+    "platform",
+    "seabed_area",
+    "sea_area"
+  ],
+  "terms": [
+    "marine"
+  ],
+  "type": "combo"
+}

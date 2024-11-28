@@ -1,0 +1,11 @@
+{
+  "key": "frequency",
+  "label": "Operating Frequency",
+  "options": [
+    "50",
+    "0",
+    "60",
+    "16.7"
+  ],
+  "type": "combo"
+}

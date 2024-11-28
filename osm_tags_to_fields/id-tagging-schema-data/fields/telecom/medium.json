@@ -1,0 +1,9 @@
+{
+  "key": "telecom:medium",
+  "label": "Medium",
+  "options": [
+    "fibre",
+    "copper"
+  ],
+  "type": "combo"
+}

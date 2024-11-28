@@ -1,0 +1,11 @@
+{
+  "key": "liaison",
+  "label": "Type",
+  "options": [
+    "subnational",
+    "liaison_office",
+    "representative_office",
+    "Cooperation"
+  ],
+  "type": "combo"
+}

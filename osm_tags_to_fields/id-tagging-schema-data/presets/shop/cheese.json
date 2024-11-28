@@ -1,0 +1,14 @@
+{
+    "icon": "fas-cheese",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "shop": "cheese"
+    },
+    "moreFields": [
+        "fhrs/id-GB"
+    ],
+    "name": "Cheese Store"
+}

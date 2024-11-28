@@ -1,0 +1,13 @@
+{
+  "key": "service:bicycle:",
+  "label": "Bicycle Services",
+  "options": [
+    "electricity",
+    "bike ramp",
+    "service.bicycle.retail",
+    "pump",
+    "service:bicycle:repair=yes",
+    "rental"
+  ],
+  "type": "multiCombo"
+}

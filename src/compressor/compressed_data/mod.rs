@@ -1,4 +1,5 @@
 use node::{osm_node_to_compressed_node, serialize_node};
+use osm_value_atom::LiteralValue;
 use osmpbfreader::{NodeId, OsmId, OsmObj, Ref, RelationId, WayId};
 use relation::{osm_relation_to_compressed_node, serialize_relation};
 use way::{osm_way_to_compressed_node, serialize_way};
@@ -6,11 +7,10 @@ use way::{osm_way_to_compressed_node, serialize_way};
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
 use minimal_storage::{
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
-    varint::{from_varint, ToVarint},
+    pooled_storage::Pool, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{from_varint, ToVarint}
 };
 
-use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
+use osm_structures::literal::Literal;
 
 use super::{tag_compressing::{node::Node, relation::Relation, way::Way, InlinedTags}, CACHE_SATURATION};
 
@@ -125,7 +125,7 @@ impl DeserializeFromMinimal for CompressedOsmData {
 }
 
 impl SerializeMinimal for CompressedOsmData {
-    type ExternalData<'a> = &'a mut (LiteralPool<Literal>, LiteralPool<LiteralValue>);
+    type ExternalData<'a> = &'a mut (Pool<Literal>, Pool<LiteralValue>);
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
         &'a self,
@@ -158,7 +158,7 @@ pub struct UncompressedOsmData(Vec<u8>);
 impl UncompressedOsmData {
     pub fn new(
         data: &CompressedOsmData,
-        pool: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+        pool: &mut (Pool<Literal>, Pool<LiteralValue>),
     ) -> Self {
         let mut blob = Vec::new();
         data.minimally_serialize(&mut blob, pool).unwrap();

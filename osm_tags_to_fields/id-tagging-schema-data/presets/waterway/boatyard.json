@@ -1,0 +1,22 @@
+{
+    "icon": "temaki-boat",
+    "fields": [
+        "name",
+        "operator"
+    ],
+    "moreFields": [
+        "{@templates/contact}",
+        "address",
+        "gnis/feature_id-US",
+        "wheelchair"
+    ],
+    "geometry": [
+        "area",
+        "vertex",
+        "point"
+    ],
+    "tags": {
+        "waterway": "boatyard"
+    },
+    "name": "Boatyard"
+}

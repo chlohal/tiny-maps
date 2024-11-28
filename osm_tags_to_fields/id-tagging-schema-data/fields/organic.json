@@ -1,0 +1,18 @@
+{
+    "key": "organic",
+    "type": "combo",
+    "label": "Organic Products",
+    "strings": {
+        "options": {
+            "no": "None",
+            "yes": "Some",
+            "only": "Only"
+        }
+    },
+    "autoSuggestions": false,
+    "customValues": false,
+    "terms": [
+        "natural",
+        "non-gmo"
+    ]
+}

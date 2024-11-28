@@ -1,0 +1,7 @@
+[package]
+name = "osm_value_atom"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+minimal_storage = { path = "../storage" }

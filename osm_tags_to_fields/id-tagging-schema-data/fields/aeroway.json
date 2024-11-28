@@ -1,0 +1,19 @@
+{
+  "key": "aeroway",
+  "label": "Type",
+  "options": [
+    "taxiway",
+    "parking_position",
+    "hangar",
+    "runway",
+    "helipad",
+    "navigationaid",
+    "aerodrome",
+    "apron",
+    "holding_position",
+    "gate",
+    "terminal",
+    "windsock"
+  ],
+  "type": "typeCombo"
+}

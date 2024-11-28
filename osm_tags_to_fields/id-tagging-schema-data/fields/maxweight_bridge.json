@@ -1,0 +1,10 @@
+{
+  "key": "maxweight",
+  "label": "{maxweight}",
+  "prerequisiteTag": {
+    "key": "bridge",
+    "valueNot": "no"
+  },
+  "snake_case": false,
+  "type": "number"
+}

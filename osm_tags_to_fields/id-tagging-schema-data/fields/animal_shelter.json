@@ -1,0 +1,26 @@
+{
+  "key": "animal_shelter",
+  "label": "For Animals",
+  "options": [
+    "dog",
+    "cat",
+    "wildlife",
+    "bird",
+    "horse",
+    "yes",
+    "duck",
+    "cow",
+    "mammal",
+    "elephant",
+    "rabbit",
+    "sheep",
+    "donkey",
+    "deer",
+    "calf",
+    "turtle",
+    "chicken",
+    "hedgehog",
+    "horses"
+  ],
+  "type": "semiCombo"
+}

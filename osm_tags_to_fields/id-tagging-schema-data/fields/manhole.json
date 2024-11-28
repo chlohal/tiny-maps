@@ -1,0 +1,13 @@
+{
+  "key": "manhole",
+  "label": "Type",
+  "options": [
+    "drain",
+    "sewer",
+    "yes",
+    "telecom",
+    "water",
+    "unknown"
+  ],
+  "type": "typeCombo"
+}

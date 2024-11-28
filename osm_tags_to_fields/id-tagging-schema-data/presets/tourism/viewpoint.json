@@ -1,0 +1,18 @@
+{
+    "icon": "temaki-spotting_scope",
+    "geometry": [
+        "point",
+        "vertex",
+        "area"
+    ],
+    "fields": [
+        "direction"
+    ],
+    "moreFields": [
+        "level"
+    ],
+    "tags": {
+        "tourism": "viewpoint"
+    },
+    "name": "Viewpoint"
+}

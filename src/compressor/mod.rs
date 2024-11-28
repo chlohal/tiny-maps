@@ -3,8 +3,9 @@ use std::{
 };
 
 use compressed_data::{flattened_id, CompressedOsmData, UncompressedOsmData};
-use minimal_storage::serialize_fast::FastMinSerde;
-use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
+use minimal_storage::{pooled_storage::Pool, serialize_fast::FastMinSerde};
+use osm_structures::literal::Literal;
+use osm_value_atom::LiteralValue;
 use osmpbfreader::{OsmId, OsmObj};
 
 use tree::{
@@ -15,14 +16,12 @@ use tree::{
 };
 
 pub mod compressed_data;
-pub mod tag_compressing;
-pub mod types;
 
 const CACHE_SATURATION: usize = 4_000;
 const DATA_SATURATION: usize = 8_000;
 
 pub struct Compressor {
-    values: (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+    values: (Pool<Literal>, Pool<LiteralValue>),
     pub cache_bboxes: StoredBinaryTree<CACHE_SATURATION, u64, BoundingBox<i32>>,
     pub geography: StoredTree<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>,
     queue_to_handle_at_end: VecDeque<OsmObj>,
@@ -32,8 +31,8 @@ impl Compressor {
     pub fn new(state_path: &PathBuf) -> Self {
         create_dir_all(state_path).unwrap();
 
-        let lit_file = BufWriter::new(open_file_with_write(&state_path.join("literals")));
-        let val_file = BufWriter::new(open_file_with_write(&state_path.join("values")));
+        let lit_file = open_file_with_write(&state_path.join("literals"));
+        let val_file = open_file_with_write(&state_path.join("values"));
 
         let mut geography = open_tree::<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>(
             state_path.join("geography"),
@@ -52,8 +51,8 @@ impl Compressor {
 
         Compressor {
             values: (
-                LiteralPool::new(Box::new(lit_file)),
-                LiteralPool::new(Box::new(val_file)),
+                Pool::new(Box::new(lit_file)).unwrap(),
+                Pool::new(Box::new(val_file)).unwrap(),
             ),
             cache_bboxes,
             geography,

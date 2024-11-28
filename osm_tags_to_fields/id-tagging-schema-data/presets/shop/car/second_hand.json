@@ -1,0 +1,16 @@
+{
+    "icon": "temaki-car_dealer",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "terms": [
+        "automobile",
+        "automotive"
+    ],
+    "tags": {
+        "shop": "car",
+        "second_hand": "only"
+    },
+    "name": "Used Car Dealership"
+}

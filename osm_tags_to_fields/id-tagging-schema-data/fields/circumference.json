@@ -1,0 +1,11 @@
+{
+  "key": "circumference",
+  "label": "Circumference (at Breast Height)",
+  "placeholder": "1 m, 20 cm, 30\"…",
+  "snake_case": false,
+  "terms": [
+    "DBH",
+    "diameter at breast height"
+  ],
+  "type": "number"
+}

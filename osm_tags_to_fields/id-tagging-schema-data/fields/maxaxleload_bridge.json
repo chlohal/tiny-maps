@@ -1,0 +1,18 @@
+{
+  "key": "maxaxleload",
+  "label": "Axle Weight Limit",
+  "options": [
+    "11.5",
+    "10",
+    "8",
+    "6",
+    "12",
+    "5"
+  ],
+  "prerequisiteTag": {
+    "key": "bridge",
+    "valueNot": "no"
+  },
+  "snake_case": false,
+  "type": "combo"
+}

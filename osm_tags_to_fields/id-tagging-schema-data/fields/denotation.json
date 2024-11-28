@@ -1,0 +1,14 @@
+{
+  "key": "denotation",
+  "label": "Denotation",
+  "options": [
+    "urban",
+    "agricultural",
+    "avenue",
+    "park",
+    "street",
+    "garden",
+    "landmark"
+  ],
+  "type": "combo"
+}

@@ -1,5 +1,6 @@
-use minimal_storage::{packed_string_serialization::StringSerialVariation, serialize_min::SerializeMinimal};
-use osm_literals::{literal::Literal, literal_value::LiteralValue, pool::LiteralPool};
+use minimal_storage::{packed_string_serialization::StringSerialVariation, pooled_storage::Pool, serialize_min::SerializeMinimal};
+use osm_structures::literal::Literal;
+use osm_value_atom::LiteralValue;
 use osmpbfreader::{OsmObj, Ref, Relation, RelationId};
 
 use crate::compressor::{compressed_data::flattened_id, tag_compressing::{self, relation::inline_relation_tags, InlinedTags}, CACHE_SATURATION};
@@ -27,7 +28,7 @@ pub fn osm_relation_to_compressed_node(relation: Relation, bbox_cache: &mut Stor
 
 pub fn serialize_relation<W: std::io::Write>(
     write_to: &mut W,
-    pools: &mut (LiteralPool<Literal>, LiteralPool<LiteralValue>),
+    pools: &mut (Pool<Literal>, Pool<LiteralValue>),
     id: &RelationId,
     tags: &InlinedTags<tag_compressing::relation::Relation>,
     children: &Vec<Ref>
@@ -48,7 +49,8 @@ pub fn serialize_relation<W: std::io::Write>(
 
     literals.len().minimally_serialize(write_to, ())?;
     for literal in literals.iter() {
-        let id = LiteralPool::<Literal>::insert(pools, literal)?;
+        let (p1, p2) = pools;
+        let id = Pool::<Literal>::insert(p1, literal, p2)?;
 
         id.minimally_serialize(write_to, ())?;
     }

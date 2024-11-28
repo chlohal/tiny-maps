@@ -1,0 +1,17 @@
+{
+  "key": "operator:type",
+  "label": "Operator Type",
+  "options": [
+    "public",
+    "private",
+    "government",
+    "community",
+    "business",
+    "religious",
+    "university"
+  ],
+  "prerequisiteTag": {
+    "key": "operator"
+  },
+  "type": "combo"
+}

@@ -1,0 +1,13 @@
+{
+  "key": "residential",
+  "label": "Type",
+  "options": [
+    "rural",
+    "apartments",
+    "single_family",
+    "urban",
+    "condominium",
+    "trailer_park"
+  ],
+  "type": "combo"
+}

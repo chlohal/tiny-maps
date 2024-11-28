@@ -1,0 +1,12 @@
+{
+  "key": "power",
+  "label": "Type",
+  "options": [
+    "tower",
+    "pole",
+    "generator",
+    "minor_line",
+    "line"
+  ],
+  "type": "typeCombo"
+}

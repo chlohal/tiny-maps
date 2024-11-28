@@ -1,0 +1,10 @@
+{
+  "key": "parking_space",
+  "label": "Type",
+  "options": [
+    "normal",
+    "disabled",
+    "charging"
+  ],
+  "type": "combo"
+}

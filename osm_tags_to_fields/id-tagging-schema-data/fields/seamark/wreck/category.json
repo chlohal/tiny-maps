@@ -1,0 +1,11 @@
+{
+  "key": "seamark:wreck:category",
+  "label": "Category",
+  "options": [
+    "dangerous",
+    "non-dangerous",
+    "hull_showing",
+    "distributed_remains"
+  ],
+  "type": "combo"
+}

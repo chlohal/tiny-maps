@@ -1,0 +1,20 @@
+{
+  "key": "tourism",
+  "label": "Type",
+  "options": [
+    "information",
+    "hotel",
+    "artwork",
+    "attraction",
+    "viewpoint",
+    "guest_house",
+    "picnic_site",
+    "camp_site",
+    "museum",
+    "chalet",
+    "camp_pitch",
+    "apartment",
+    "hostel"
+  ],
+  "type": "typeCombo"
+}

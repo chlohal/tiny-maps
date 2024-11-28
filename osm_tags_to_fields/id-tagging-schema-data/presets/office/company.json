@@ -1,0 +1,15 @@
+{
+    "icon": "maki-suitcase",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "office": "company"
+    },
+    "terms": [
+        "corporation",
+        "office park"
+    ],
+    "name": "Corporate Office"
+}

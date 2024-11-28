@@ -6,7 +6,7 @@ edition = "2021"
 default-run = "main"
 
 [workspace]
-members = [ "btree_vec", "lru_cache", "lutmorton", "osm_literals","storage", "tree"]
+members = [ "btree_vec", "lru_cache", "lutmorton", "osm_structures","storage", "tree", "osm_tags_to_fields", "osm_schema_builder", "osm_value_atom", "osm_tag_compression"]
 
 
 [dependencies]
@@ -14,6 +14,12 @@ osmpbfreader = "0.16.1"
 par-map = "0.1.4"
 rayon = "1.10.0"
 minimal_storage = { path = "./storage" }
-osm_literals = { path = "./osm_literals" }
+osm_structures = { path = "./osm_structures" }
+osm_value_atom = { path = "./osm_value_atom" }
 tree = { path = "./tree" }
 clap = { version = "4.5.11", features = ["derive"] }
+
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=/usr/bin/mold"]

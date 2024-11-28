@@ -1,0 +1,31 @@
+{
+  "key": "agrarian",
+  "label": "Products",
+  "options": [
+    "yes",
+    "agricultural_machinery",
+    "feed",
+    "machine_parts",
+    "tools",
+    "seed",
+    "fertilizer",
+    "pesticide",
+    "agricultural_parts",
+    "seeds",
+    "grapevines",
+    "machine",
+    "tractors",
+    "eggs",
+    "tractor",
+    "lumber",
+    "pesticides",
+    "beekeeping",
+    "tools, machine_parts",
+    "machine_repair",
+    "irrigation",
+    "food",
+    "herbicide",
+    "seedling"
+  ],
+  "type": "semiCombo"
+}

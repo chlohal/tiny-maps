@@ -1,0 +1,12 @@
+{
+    "icon": "temaki-seesaw",
+    "geometry": [
+        "point",
+        "line",
+        "area"
+    ],
+    "tags": {
+        "playground": "seesaw"
+    },
+    "name": "Seesaw"
+}

@@ -1,0 +1,31 @@
+{
+  "key": "produce",
+  "label": "Produce",
+  "options": [
+    "timber",
+    "rice",
+    "apple",
+    "wood",
+    "oysters",
+    "latex",
+    "crop",
+    "olive",
+    "fish",
+    "tea",
+    "sugar_cane",
+    "palm oil",
+    "live_animal",
+    "date",
+    "oil",
+    "vegetables",
+    "plum",
+    "shrimp",
+    "orange",
+    "cereal",
+    "grape",
+    "cherry",
+    "vegetable_oil",
+    "banana"
+  ],
+  "type": "semiCombo"
+}

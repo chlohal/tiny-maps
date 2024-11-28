@@ -1,0 +1,22 @@
+{
+  "key": "valve",
+  "label": "Type",
+  "options": [
+    "ball",
+    "gate",
+    "butterfly",
+    "globe",
+    "blowout",
+    "yes",
+    "sluice_gate",
+    "main",
+    "schrader",
+    "hollow_jet",
+    "AS",
+    "check",
+    "needle",
+    "fire",
+    "Feuerwasser"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,20 @@
+{
+    "icon": "temaki-beach",
+    "fields": [
+        "name",
+        "surface",
+        "lifeguard_check",
+        "supervised"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "natural": "beach"
+    },
+    "terms": [
+        "shore"
+    ],
+    "name": "Beach"
+}

@@ -1,0 +1,16 @@
+{
+  "key": "tower:type",
+  "label": "Type",
+  "options": [
+    "communication",
+    "lighting",
+    "bell_tower",
+    "observation",
+    "defensive",
+    "minaret",
+    "siren",
+    "watchtower",
+    "cooling"
+  ],
+  "type": "combo"
+}

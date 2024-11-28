@@ -1,0 +1,15 @@
+{
+  "key": "emergency",
+  "label": "Type",
+  "options": [
+    "fire_hydrant",
+    "access_point",
+    "yes",
+    "defibrillator",
+    "phone",
+    "water_tank",
+    "siren",
+    "suction_point"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,17 @@
+{
+  "key": "fountain",
+  "label": "Type",
+  "options": [
+    "bubbler",
+    "drinking",
+    "decorative",
+    "splash_pad",
+    "bottle_refill",
+    "nozzle",
+    "nasone",
+    "jet_water",
+    "water",
+    "stone_block"
+  ],
+  "type": "combo"
+}

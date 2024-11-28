@@ -1,0 +1,10 @@
+{
+  "key": "destination:symbol",
+  "label": "{destination/symbol}",
+  "stringsCrossReference": "{destination/symbol}",
+  "prerequisiteTag": {
+    "key": "oneway",
+    "value": "yes"
+  },
+  "type": "semiCombo"
+}

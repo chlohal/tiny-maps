@@ -1,0 +1,11 @@
+{
+    "icon": "roentgen-ford",
+    "geometry": [
+        "line"
+    ],
+    "tags": {
+        "ford": "*"
+    },
+    "name": "Ford",
+    "searchable": false
+}

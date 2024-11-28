@@ -1,0 +1,25 @@
+{
+  "key": "destination:symbol",
+  "label": "Destination Symbols",
+  "options": [
+    "motorway",
+    "airport",
+    "hospital",
+    "centre",
+    "industrial",
+    "parking",
+    "bus",
+    "train_station",
+    "rest_area",
+    "ferry",
+    "motorroad",
+    "fuel",
+    "Aufzug",
+    "viewpoint",
+    "fuel_diesel",
+    "food",
+    "lodging",
+    "info"
+  ],
+  "type": "semiCombo"
+}

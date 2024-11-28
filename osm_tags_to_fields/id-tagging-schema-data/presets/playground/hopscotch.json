@@ -1,0 +1,12 @@
+{
+    "icon": "roentgen-hopscotch",
+    "geometry": [
+        "point",
+        "line",
+        "area"
+    ],
+    "tags": {
+        "playground": "hopscotch"
+    },
+    "name": "Hopscotch"
+}

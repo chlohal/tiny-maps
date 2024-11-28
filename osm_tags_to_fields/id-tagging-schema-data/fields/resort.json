@@ -1,0 +1,17 @@
+{
+  "key": "resort",
+  "label": "Type",
+  "options": [
+    "recreation_center",
+    "resort",
+    "sanatorium",
+    "kids_camp",
+    "tourist_camp",
+    "pension",
+    "beach_resort",
+    "guest_house",
+    "tourism_camp",
+    "holiday_apartment"
+  ],
+  "type": "combo"
+}

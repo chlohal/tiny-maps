@@ -1,0 +1,25 @@
+{
+    "icon": "temaki-boat_rental",
+    "fields": [
+        "name",
+        "operator",
+        "operator/type",
+        "opening_hours",
+        "fee",
+        "payment_multi_fee",
+        "charge_fee"
+    ],
+    "moreFields": [
+        "{@templates/poi}",
+        "access_simple",
+        "address"
+    ],
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "amenity": "boat_rental"
+    },
+    "name": "Boat Rental"
+}

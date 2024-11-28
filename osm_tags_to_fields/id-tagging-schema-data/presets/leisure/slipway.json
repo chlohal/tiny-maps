@@ -1,0 +1,31 @@
+{
+    "icon": "maki-slipway",
+    "fields": [
+        "name",
+        "surface",
+        "access_simple",
+        "fee",
+        "payment_multi_fee",
+        "charge_fee"
+    ],
+    "moreFields": [
+        "lit",
+        "opening_hours",
+        "seamark/type",
+        "width"
+    ],
+    "geometry": [
+        "point",
+        "vertex",
+        "line"
+    ],
+    "terms": [
+        "boat launch",
+        "boat ramp",
+        "boat landing"
+    ],
+    "tags": {
+        "leisure": "slipway"
+    },
+    "name": "Slipway"
+}

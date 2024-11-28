@@ -1,0 +1,14 @@
+{
+    "icon": "fas-hat-cowboy-side",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "shop": "country_store"
+    },
+    "name": "Rural Supplies Store",
+    "aliases": [
+        "Country Store"
+    ]
+}

@@ -1,0 +1,24 @@
+{
+  "caseSensitive": true,
+  "key": "hashtags",
+  "label": "Hashtags",
+  "options": [
+    "#TeamVeritas",
+    "#ceridian",
+    "#UPTacYM",
+    "#Mapathon_Ubakrie #Kelas_GIS_2024_UBakrie",
+    "#expediagroup;#maproulette",
+    "#bastajavlakartan",
+    "#cwugeog",
+    "#metalroofingspecialists#localroofer #roofing #roofer #roofingcompany #roof #roofrepair #roofingcontractor #roofingservices #roofmaintenance #tileroof #leakyroofrepair #murrieta #roofleakrepair #roofservice #affordableroofing #roofersofinstagram #localroo",
+    "#garupa",
+    "#GEM2020/2021",
+    "#bostonroofer#metalroofingspecialists#metalroofer#localroofer #roofing #roofer #roofingcompany #roof #roofrepair #roofingcontractor #roofingservices #roofmaintenance #tileroof #leakyroofrepair #roofleakrepair #roofservice #affordableroofing #roofersofinst",
+    "#studio #studioviola #استودیو ویولا #استودیو_ویولا #استودیو_ویولا",
+    "#swiggy",
+    "#Mapathon_Ubakrie #Kelas_GIS_2024_UBakrie#Mapathon_Ubakrie #Kelas_GIS_2024_UBakrie"
+  ],
+  "placeholder": "#example",
+  "type": "semiCombo",
+  "usage": "changeset"
+}

@@ -1,0 +1,13 @@
+{
+  "key": "location",
+  "label": "Location",
+  "options": [
+    "roof",
+    "surface",
+    "underground",
+    "outdoor",
+    "overground",
+    "indoor"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,16 @@
+{
+  "geometry": [
+    "area"
+  ],
+  "key": "building",
+  "label": "{building}",
+  "options": [
+    "yes",
+    "house",
+    "residential",
+    "detached",
+    "garage",
+    "apartments"
+  ],
+  "type": "combo"
+}

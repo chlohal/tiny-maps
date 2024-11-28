@@ -1,0 +1,18 @@
+{
+  "caseSensitive": true,
+  "key": "booth",
+  "label": "Booth",
+  "options": [
+    "K6",
+    "KX100",
+    "KXPlus",
+    "yes",
+    "TelH_90",
+    "no",
+    "KX300",
+    "K2",
+    "ST6",
+    "TelH_78"
+  ],
+  "type": "combo"
+}

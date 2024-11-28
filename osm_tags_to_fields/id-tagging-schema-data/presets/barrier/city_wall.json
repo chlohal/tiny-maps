@@ -1,0 +1,19 @@
+{
+    "icon": "temaki-wall",
+    "fields": [
+        "height",
+        "material"
+    ],
+    "moreFields": [
+        "{barrier}",
+        "two_sided"
+    ],
+    "geometry": [
+        "line",
+        "area"
+    ],
+    "tags": {
+        "barrier": "city_wall"
+    },
+    "name": "City Wall"
+}

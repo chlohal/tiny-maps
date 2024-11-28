@@ -1,0 +1,18 @@
+{
+  "key": "place",
+  "label": "Type",
+  "options": [
+    "hamlet",
+    "locality",
+    "village",
+    "isolated_dwelling",
+    "islet",
+    "neighbourhood",
+    "farm",
+    "plot",
+    "suburb",
+    "quarter",
+    "town"
+  ],
+  "type": "typeCombo"
+}

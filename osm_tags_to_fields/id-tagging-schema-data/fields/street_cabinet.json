@@ -1,0 +1,15 @@
+{
+  "key": "street_cabinet",
+  "label": "Type",
+  "options": [
+    "power",
+    "telecom",
+    "traffic_control",
+    "postal_service",
+    "gas",
+    "street_lighting",
+    "transport_management",
+    "traffic_signals"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,18 @@
+{
+    "icon": "iD-power-line",
+    "fields": [
+        "name",
+        "operator",
+        "voltage",
+        "cables",
+        "ref",
+        "layer"
+    ],
+    "geometry": [
+        "line"
+    ],
+    "tags": {
+        "power": "minor_line"
+    },
+    "name": "Minor Power Line"
+}

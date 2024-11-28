@@ -1,0 +1,7 @@
+{
+  "key": "diameter_crown",
+  "label": "Crown Diameter",
+  "placeholder": "4 m, 9', …",
+  "snake_case": false,
+  "type": "number"
+}

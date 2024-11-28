@@ -1,0 +1,11 @@
+{
+  "default": "signal",
+  "key": "traffic_signals",
+  "label": "Type",
+  "options": [
+    "signal",
+    "traffic_lights",
+    "pedestrian_crossing"
+  ],
+  "type": "combo"
+}

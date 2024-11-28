@@ -1,0 +1,15 @@
+{
+  "key": "aerialway",
+  "label": "Type",
+  "options": [
+    "pylon",
+    "station",
+    "chair_lift",
+    "platter",
+    "drag_lift",
+    "t-bar",
+    "magic_carpet",
+    "goods"
+  ],
+  "type": "typeCombo"
+}

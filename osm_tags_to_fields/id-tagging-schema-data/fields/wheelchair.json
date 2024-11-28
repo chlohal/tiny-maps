@@ -1,0 +1,15 @@
+{
+    "key": "wheelchair",
+    "type": "radio",
+    "strings": {
+        "options": {
+            "yes": "Yes",
+            "limited": "Limited",
+            "no": "No"
+        }
+    },
+    "label": "Wheelchair Access",
+    "terms": [
+        "handicap access"
+    ]
+}

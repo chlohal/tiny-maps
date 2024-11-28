@@ -1,0 +1,13 @@
+{
+    "key": "direction",
+    "type": "combo",
+    "label": "Direction",
+    "strings": {
+        "options": {
+            "clockwise": "Clockwise",
+            "anticlockwise": "Counterclockwise"
+        }
+    },
+    "autoSuggestions": false,
+    "customValues": false
+}

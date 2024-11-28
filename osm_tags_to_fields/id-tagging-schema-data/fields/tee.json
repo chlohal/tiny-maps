@@ -1,0 +1,21 @@
+{
+  "key": "tee",
+  "label": "Tee Color/Type",
+  "options": [
+    "red",
+    "white",
+    "blue",
+    "yellow",
+    "black",
+    "gold",
+    "teebox",
+    "green",
+    "silver",
+    "orange"
+  ],
+  "reference": {
+    "key": "golf",
+    "value": "tee"
+  },
+  "type": "semiCombo"
+}

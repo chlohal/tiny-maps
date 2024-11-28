@@ -1,0 +1,11 @@
+{
+    "icon": "fas-sign-hanging",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "craft": "signmaker"
+    },
+    "name": "Signmaker"
+}

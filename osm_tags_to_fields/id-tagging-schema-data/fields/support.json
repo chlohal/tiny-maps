@@ -1,0 +1,15 @@
+{
+  "key": "support",
+  "label": "Support",
+  "options": [
+    "pole",
+    "ground",
+    "wall_mounted",
+    "wall",
+    "power_pole",
+    "street_furniture:transit_shelter",
+    "pedestal",
+    "poles"
+  ],
+  "type": "combo"
+}

@@ -1,0 +1,14 @@
+{
+    "key": "siren:type",
+    "type": "combo",
+    "label": "Type",
+    "strings": {
+        "options": {
+            "pneumatic": "Pneumatic",
+            "electronic": "Electronic",
+            "other": "Other"
+        }
+    },
+    "autoSuggestions": false,
+    "customValues": false
+}

@@ -1,0 +1,14 @@
+{
+    "icon": "maki-suitcase",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "office": "financial"
+    },
+    "terms": [
+        "bank"
+    ],
+    "name": "Financial Office"
+}

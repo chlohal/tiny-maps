@@ -1,0 +1,10 @@
+{
+  "key": "line_attachment",
+  "label": "Line Attachment",
+  "options": [
+    "suspension",
+    "anchor",
+    "pin"
+  ],
+  "type": "combo"
+}

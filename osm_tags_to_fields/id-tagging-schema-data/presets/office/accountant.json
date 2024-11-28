@@ -1,0 +1,16 @@
+{
+    "icon": "temaki-accounting",
+    "geometry": [
+        "point",
+        "area"
+    ],
+    "tags": {
+        "office": "accountant"
+    },
+    "terms": [
+        "accountancy",
+        "accounting firm",
+        "bookkeeper"
+    ],
+    "name": "Accountant Office"
+}

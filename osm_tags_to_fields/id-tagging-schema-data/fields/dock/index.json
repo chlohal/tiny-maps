@@ -1,0 +1,12 @@
+{
+    "key": "dock",
+    "type": "combo",
+    "label": "Type",
+    "strings": {
+        "options": {
+            "drydock": "Dry Dock",
+            "floating": "Floating Dry Dock",
+            "tidal": "Impounded Tidal Dock"
+        }
+    }
+}
