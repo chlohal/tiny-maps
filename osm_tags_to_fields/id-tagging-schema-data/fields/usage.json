@@ -9,7 +9,13 @@
             "industrial": "Industrial",
             "military": "Military",
             "test": "Test",
-            "tourism": "Tourism"
+            "tourism": "Tourism",
+            "transportation": "Transportation",
+            "transmission": "Transmission",
+            "irrigation": "Irrigation",
+            "headrace": "Headrace",
+            "tailrace": "Tailrace",
+            "spillway": "Spillway"
         }
     },
     "autoSuggestions": false,

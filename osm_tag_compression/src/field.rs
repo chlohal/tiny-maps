@@ -1,17 +1,18 @@
 use std::io::Write;
 
-use minimal_storage::{bit_sections::Byte, pooled_storage::Pool, serialize_min::SerializeMinimal, varint::ToVarint};
+use minimal_storage::{bit_sections::{BitSection, Byte}, pooled_storage::Pool, serialize_min::SerializeMinimal, varint::ToVarint};
+use osm_tags_to_fields::fields::AnyOsmField;
 use osm_value_atom::LiteralValue;
 
 use osm_structures::structured_elements::{address::OsmAddress, contact::OsmContactInfo};
 
 #[derive(Clone, Debug)]
 pub enum Field {
-    Other(LiteralKey, LiteralValue),
+    Other(String, LiteralValue),
     Field(AnyOsmField),
 }
 
-impl<A: Into<LiteralKey>, B: Into<LiteralValue>> From<(A, B)> for Field {
+impl<A: Into<String>, B: Into<LiteralValue>> From<(A, B)> for Field {
     fn from(value: (A, B)) -> Self {
         Field::Other(value.0.into(), value.1.into())
     }
@@ -25,56 +26,29 @@ impl SerializeMinimal for Field {
         write_to: &mut W,
         pool: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        let mut head = Byte::from(0);
-
         match self {
-            Field::KeyVar(k, v) => {
+            Field::Other(k, v) => {
+                let mut head = Byte::from(0);
                 head.set_bit(0, false);
+                write_to.write_all(&[head.into_inner()])?;
 
-                match k {
-                    LiteralKey::WellKnownKey(wkk) => {
-
-                        head.set_range::<1, 8>(*wkk as u8);
-                        write_to.write_all(&[head.into_inner()])?;
-                    }
-                    LiteralKey::Str(s) => {
-                        head.set_bit(1, true);
-                        write_to.write_all(&[head.into_inner()])?;
-
-                        let id = pool.insert(&s.clone().into(), ())?;
-                        id.write_varint(write_to)?;
-                    }
-                }
+                let id = pool.insert(&k.clone().into(), ())?;
+                id.write_varint(write_to)?;
 
                 let id = pool.insert(v, ())?;
                 return id.write_varint(write_to);
             }
-            Field::WellKnownKeyVar(wk) => {
+            Field::Field(wk) => {
+                let mut head = BitSection::<0, 16, u16>::from(0);
                 head.set_bit(0, true);
 
-                match wk {
-                    WellKnownKeyVar::Address(addr) => {
-                        head |= 0b00_0000;
-
-                        write_to.write_all(&[head])?;
-
-                        return addr.minimally_serialize(write_to, pool);
-                    }
-                    WellKnownKeyVar::Contact(contact) => {
-                        head |= 0b00_0001;
-
-                        write_to.write_all(&[head])?;
-
-                        return contact.minimally_serialize(write_to, pool);
-                    }
-                    WellKnownKeyVar::MapFeatureType => {
-                        head |= 0b00_0010;
-
-                        write_to.write_all(&[head])?;
-
-                        todo!()
-                    }
+                const {
+                    assert!(osm_tags_to_fields::fields::MAX_FIELD_ID < 2usize.pow(10));
                 }
+
+                let head = head.reduce_extent::<1, 16>();
+
+                return wk.minimally_serialize(write_to, (pool, head))
             }
         }
     }

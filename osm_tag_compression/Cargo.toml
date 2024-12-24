@@ -9,3 +9,4 @@ minimal_storage = { path = "../storage" }
 osm_value_atom = { path = "../osm_value_atom" }
 osmpbfreader = "0.16.1"
 osm_tags_to_fields = { path = "../osm_tags_to_fields" }
+tree = { path = "../tree" }

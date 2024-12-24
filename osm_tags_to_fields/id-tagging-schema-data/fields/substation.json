@@ -12,7 +12,13 @@
             "transition": "Overground/Underground Transition",
             "traction": "Traction System Supply",
             "converter": "High-Voltage AC/DC Converter",
-            "compensation": "Reactive Power Compensation"
+            "compensation": "Reactive Power Compensation",
+            "compression": "Compression",
+            "measurement": "Measurement",
+            "valve": "Valve",
+            "valve_group": "Valve Group",
+            "inspection_gauge": "Inspection Gauge",
+            "field_gathering": "Field Gathering"
         }
     },
     "autoSuggestions": false

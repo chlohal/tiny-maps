@@ -4,6 +4,7 @@
     "label": "Type",
     "strings": {
         "options": {
+            "yes": "Unspecified",
             "aqueduct": "Aqueduct",
             "boardwalk": "Boardwalk",
             "cantilever": "Cantilever Bridge",

@@ -106,6 +106,8 @@ fn load_discards() -> Vec<Vec<DeprecationInstruction>> {
 }
 
 pub fn load_deprecations() -> Vec<Vec<DeprecationInstruction>> {
+    return vec![];
+
     let deprecated_file =
         open_json("id-tagging-schema-data/deprecated.json").expect("deprecated.json should exist");
 
@@ -236,10 +238,10 @@ fn write_depr(
             _ => ("flat_map", "vec![", "]"),
         };
 
-        let typ_prefix_mch = if emitter_exprs.is_empty() {
-            "(None"
+        let (typ_prefix_mch, typ_suffix_mch) = if emitter_exprs.is_empty() {
+            ("None", "")
         } else {
-            typ_prefix
+            (typ_prefix, typ_suffix)
         };
 
         let emitter_exprs = emitter_exprs.join(",\n");
@@ -248,7 +250,7 @@ fn write_depr(
             write_to,
             r".{method}(|(key, value)| {{
             if {matcher} {{
-    {typ_prefix_mch}{emitter_exprs}{typ_suffix}
+    {typ_prefix_mch}{emitter_exprs}{typ_suffix_mch}
             }} else {{
                 {typ_prefix}(key, value){typ_suffix}
             }}
@@ -315,7 +317,7 @@ fn write_depr(
 pub fn make_deprecations(write_to: &mut impl Write) -> std::io::Result<()> {
     write!(
         write_to,
-        "use crate::stateful_iterate::StatefulIterate;\n\npub fn apply_deprecations<S: From<&'static str> + PartialEq<&'static str>>(tags: impl Iterator<Item = (S,S)>) -> impl Iterator<Item = (S, S)> {{\nlet tags = tags.into_iter();\n"
+        "use crate::stateful_iterate::StatefulIterate;\n\npub fn apply_deprecations<S: From<&'static str> + PartialEq<&'static str>>(tags: impl Iterator<Item = (S,S)>) -> impl Iterator<Item = (S, S)> {{\n"
     )?;
 
     for depr in load_deprecations() {

@@ -4,13 +4,17 @@
     "label": "Event",
     "strings": {
         "options": {
+            "discus_throw": "Discus",
+            "hammer_throw": "Hammer Throw",
+            "high_jump": "High Jump",
             "javelin_throw": "Javelin",
             "long_jump": "Long Jump",
             "pole_vault": "Pole Vault",
+            "shot_put": "Shot Put",
+            "triple_jump": "Triple Jump",
             "running": "Running",
             "sprint": "Sprinting",
-            "steeplechase": "Steeplechase",
-            "triple_jump": "Triple Jump"
+            "steeplechase": "Steeplechase"
         }
     }
 }

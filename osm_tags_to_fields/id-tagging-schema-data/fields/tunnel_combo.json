@@ -4,6 +4,7 @@
     "label": "Type",
     "strings": {
         "options": {
+            "yes": "Unspecified",
             "avalanche_protector": "Avalanche Protector",
             "building_passage": "Building Passage",
             "culvert": "Culvert",

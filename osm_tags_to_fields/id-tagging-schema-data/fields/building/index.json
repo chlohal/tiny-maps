@@ -4,6 +4,7 @@
     "label": "Building",
     "strings": {
         "options": {
+            "yes": "Generic Building",
             "allotment_house": "Allotment House",
             "apartments": "Apartment Building",
             "barn": "Barn",

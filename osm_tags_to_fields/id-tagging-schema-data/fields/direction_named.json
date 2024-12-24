@@ -1,0 +1,18 @@
+{
+    "key": "direction",
+    "type": "combo",
+    "label": "Direction",
+    "options": [
+      "anticlockwise",
+      "backward",
+      "both",
+      "clockwise",
+      "east",
+      "forward",
+      "north",
+      "south",
+      "west"
+    ],
+    "autoSuggestions": false,
+    "customValues": false
+}

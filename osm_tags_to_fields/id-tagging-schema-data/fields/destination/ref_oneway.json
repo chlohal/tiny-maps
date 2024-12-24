@@ -1,7 +1,0 @@
-{
-  "caseSensitive": true,
-  "key": "destination:ref",
-  "label": "Destination Road Numbers",
-  "snake_case": false,
-  "type": "text"
-}

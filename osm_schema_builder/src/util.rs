@@ -40,7 +40,7 @@ impl SlugificationMethod {
         }).into_iter()
     }
 
-    fn fixup_word(&self, word: String, separator: u8) -> String {
+    fn fixup_word(&self, word: String, _separator: u8) -> String {
         word
     }
 

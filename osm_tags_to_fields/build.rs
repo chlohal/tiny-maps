@@ -7,8 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     open_file("generated_osm_structs.rs")
-    .write_all(b"mod deprecations;\nmod fields;pub use fields::parse_tags_to_fields;
-    ").unwrap();
+    .write_all(b"mod deprecations;\npub mod fields;\n").unwrap();
 
     make_deprecations(&mut open_file("deprecations.rs")).unwrap();
     make_fields(&mut open_file("fields.rs")).unwrap();

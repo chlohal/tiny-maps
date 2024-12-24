@@ -8,7 +8,11 @@
             "parking_aisle": "Parking Aisle",
             "alley": "Alley",
             "drive-through": "Drive-Through",
-            "emergency_access": "Emergency Access"
+            "emergency_access": "Emergency Access",
+            "spur": "Railroad: Spur",
+            "yard": "Railroad: Yard",
+            "siding": "Railroad: Siding",
+            "crossover": "Railroad: Crossover"
         }
     },
     "autoSuggestions": false
