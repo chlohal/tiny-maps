@@ -813,6 +813,7 @@ dependencies = [
  "clap",
  "minimal_storage",
  "osm_structures",
+ "osm_tag_compression",
  "osm_value_atom",
  "osmpbfreader",
  "par-map",
@@ -898,6 +899,7 @@ dependencies = [
  "osm_tags_to_fields",
  "osm_value_atom",
  "osmpbfreader",
+ "tree",
 ]
 
 [[package]]

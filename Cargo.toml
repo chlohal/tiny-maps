@@ -16,6 +16,7 @@ rayon = "1.10.0"
 minimal_storage = { path = "./storage" }
 osm_structures = { path = "./osm_structures" }
 osm_value_atom = { path = "./osm_value_atom" }
+osm_tag_compression = { path = "./osm_tag_compression" }
 tree = { path = "./tree" }
 clap = { version = "4.5.11", features = ["derive"] }
 

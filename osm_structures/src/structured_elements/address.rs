@@ -10,7 +10,7 @@ use super::insert_with_byte;
 
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 20;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OsmAddress {
     number: Option<LiteralValue>,
     street: Option<LiteralValue>,
@@ -171,6 +171,10 @@ impl OsmAddressBuilder {
 
         Some((key, value))
     }
+
+    pub fn to_option(self) -> Option<OsmAddress> {
+        self.into()
+    }
 }
 
 impl From<OsmAddressBuilder> for Option<OsmAddress> {
@@ -259,7 +263,7 @@ impl From<OsmAddressBuilder> for Option<OsmAddress> {
 }
 
 impl DeserializeFromMinimal for OsmAddress {
-    type ExternalData<'d> = ();
+    type ExternalData<'d> = &'d Pool<LiteralValue>;
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         _from: &'a mut R,
@@ -487,7 +491,7 @@ impl SerializeMinimal for OsmAddress {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct OsmAddressExtra {
     housename: Option<LiteralValue>,
     unit: Option<LiteralValue>,
@@ -500,18 +504,6 @@ pub struct OsmAddressExtra {
 }
 
 impl OsmAddressExtra {
-    pub(self) fn none() -> Self {
-        Self {
-            housename: None,
-            unit: None,
-            floor: None,
-            postbox: None,
-            full: None,
-            postcode: None,
-            even_more_extra: None,
-        }
-    }
-
     fn is_none(&self) -> bool {
         self.housename.is_none()
             && self.unit.is_none()
@@ -524,7 +516,7 @@ impl OsmAddressExtra {
 
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct OsmAddressEvenMoreExtra {
     hamlet: Option<LiteralValue>,
     suburb: Option<LiteralValue>,

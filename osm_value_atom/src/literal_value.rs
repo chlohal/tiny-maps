@@ -1,9 +1,9 @@
 use std::io::Read;
 
-use minimal_storage::{packed_string_serialization::StringSerialVariation, serialize_min::{ DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal }, varint::{ from_varint, ToVarint } };
+use minimal_storage::{serialize_min::{ DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal }, varint::{ from_varint, ToVarint } };
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LiteralValue {
     Specificvalue(LiteralValueSpecificValue), //0
     UInt(u64), //1
@@ -21,7 +21,7 @@ pub enum LiteralValue {
     Ref(u64), //13
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LiteralValueSpecificValue {
     BoolYes,
     BoolNo,
@@ -112,10 +112,8 @@ impl DeserializeFromMinimal for LiteralValue {
             0b1001 => todo!(), // LiteralValue::ListWithSep(_, _)
             0b1010 => LiteralValue::TwoUpperLatinAbbrev(from.read_one()?, from.read_one()?),
             0b1011 => todo!(), // LiteralValue::SplitSemiList(_)
-            0b1100 | 0b1101 | 0b1110 | 0b1111 => {
-                let variation = offset_to_string_value_enum(enum_variant & 0b11)?;
-                
-                LiteralValue::String(String::deserialize_minimal(from, &mut (variation, lower_nibble_ext_info))?)
+            0b1100 | 0b1101 | 0b1110 | 0b1111 => {     
+                LiteralValue::String(String::deserialize_minimal(from, Some(header_byte))?)
             }, 
             _ => unreachable!()
         };
@@ -158,13 +156,9 @@ impl SerializeMinimal for LiteralValue {
             }
             LiteralValue::SplitSemiList(_) => todo!(), // 0b1011_0000u8
             LiteralValue::String(s) => {
-                let mut variety = StringSerialVariation::Unicode;
-                let mut low_nibble = 0;
-
-                s.as_str().minimally_serialize(&mut buf, (&mut variety, &mut low_nibble))?;
-
-                ((0b11_00 + string_value_enum_offset(variety)) << 4) | low_nibble
-
+                //the string's serializer handles the process of writing the header byte.
+                //this prevents excessive buffer usage
+                return s.as_str().minimally_serialize(&mut buf,  0b1100_0000u8.into());
             },
 
             LiteralValue::Ref(_) => panic!("Unable to serialize a reference!"),
@@ -173,24 +167,5 @@ impl SerializeMinimal for LiteralValue {
         buf[0] = header_byte;
         
         write_to.write_all(&buf)
-    }
-}
-
-fn string_value_enum_offset(variety: StringSerialVariation) -> u8 {
-    match variety {
-        StringSerialVariation::Fivebit => 0,
-        StringSerialVariation::NonRemainder => 1,
-        StringSerialVariation::Ascii => 2,
-        StringSerialVariation::Unicode => 3,
-    }
-}
-
-fn offset_to_string_value_enum(val: u8) -> std::io::Result<StringSerialVariation> {
-    match val {
-        0 => Ok(StringSerialVariation::Fivebit),
-        1 => Ok(StringSerialVariation::NonRemainder),
-        2 => Ok(StringSerialVariation::Ascii),
-        3 => Ok(StringSerialVariation::Unicode),
-        _ => Err(std::io::ErrorKind::InvalidData.into())
     }
 }

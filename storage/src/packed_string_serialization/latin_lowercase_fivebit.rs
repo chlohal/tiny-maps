@@ -11,7 +11,7 @@
 
 use std::io::{Error, Read};
 
-use crate::serialize_min::ReadExtReadOne;
+use crate::{bit_sections::LowNibble, serialize_min::ReadExtReadOne};
 
 use super::is_final::{Finished::*, IterIsFinal, IterTryFlatten};
 
@@ -117,7 +117,7 @@ pub fn latin_lowercase_fivebit_to_string(
     Ok(str)
 }
 
-pub fn to_charset<'a, S: AsRef<str>>(str: &'a S) -> (u8, Box<[u8]>) {
+pub fn to_charset<'a, S: AsRef<str>>(str: &'a S) -> (LowNibble, Box<[u8]>) {
     let str = str.as_ref();
 
     let bytes = str.as_bytes();
@@ -149,7 +149,7 @@ pub fn to_charset<'a, S: AsRef<str>>(str: &'a S) -> (u8, Box<[u8]>) {
     };
 
     (
-        header_nibble,
+        LowNibble::from(header_nibble),
         bytes
             .chunks_exact(3)
             .is_final()

@@ -2,9 +2,7 @@ use std::{
     collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf
 };
 
-use compressed_data::{flattened_id, CompressedOsmData, UncompressedOsmData};
 use minimal_storage::{pooled_storage::Pool, serialize_fast::FastMinSerde};
-use osm_structures::literal::Literal;
 use osm_value_atom::LiteralValue;
 use osmpbfreader::{OsmId, OsmObj};
 
@@ -15,13 +13,12 @@ use tree::{
     StoredTree,
 };
 
-pub mod compressed_data;
 
 const CACHE_SATURATION: usize = 4_000;
 const DATA_SATURATION: usize = 8_000;
 
 pub struct Compressor {
-    values: (Pool<Literal>, Pool<LiteralValue>),
+    values: (Pool<Field>, Pool<LiteralValue>),
     pub cache_bboxes: StoredBinaryTree<CACHE_SATURATION, u64, BoundingBox<i32>>,
     pub geography: StoredTree<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>,
     queue_to_handle_at_end: VecDeque<OsmObj>,
