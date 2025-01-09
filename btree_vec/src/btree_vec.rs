@@ -20,7 +20,7 @@ impl<K, V> Default for BTreeVec<K, V> {
 impl<K: Ord + Clone, V> BTreeVec<K, V> {
     pub fn push(&mut self, key: K, value: V) {
         self.len += 1;
-        
+
         if self.itms.last().is_some_and(|x| key > x.0) {
             self.itms.push((key, NonEmptyUnorderVec::new(value)));
             return;

@@ -15,44 +15,18 @@ pub fn osm_way_to_compressed_node<const C: usize>(
     mut way: Way,
     bbox_cache: &StoredBinaryTree<C, u64, BoundingBox<i32>>,
 ) -> Result<CompressedOsmData, Way> {
-    let mut real_children = Vec::with_capacity(way.nodes.len());
-    let mut points = Vec::with_capacity(way.nodes.len());
+    let mut children = Vec::with_capacity(way.nodes.len());
 
-    let mut low = flattened_id(&OsmId::Node(way.nodes[0]));
+    let bbox: Option<BoundingBox<i32>> = way.nodes.iter().map(|node| {
+        let id = flattened_id(&OsmId::Node(*node));
+        children.push(id);
+        bbox_cache.find_first_item_at_key_exact(&id)
+    }).collect();
 
-    // for child in way.nodes.iter() {
-    //     points.push(
-    //         bbox_cache
-    //             .find_first_item_at_key_exact(&flattened_id(&OsmId::Node(*child)))
-    //             .unwrap(),
-    //     )
-    // }
 
-    for (is_last_child, child) in way.nodes.iter().is_final() {
-        let id = flattened_id(&OsmId::Node(*child));
-        let stride = id - low;
-
-        if stride >= FIND_GROUP_MAX_DIFFERENCE || is_last_child {
-            low = id;
-            points.extend(bbox_cache
-                .find_entries_in_box(&(low..=id))
-                .filter(|x| {
-                    if unflattened_id(x.0).node().is_some_and(|id| way.nodes.contains(&id)) {
-                        real_children.push(id);
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .map(|x| (*x.1.x(), *x.1.y())));
-        }
-    }
-
-    if points.len() != way.nodes.len() {
+    let Some(bbox) = bbox else {
         return Err(way);
-    }
-
-    let bbox = BoundingBox::<i32>::from_iter(points.into_iter());
+    };
 
     remove_non_stored_tags(&mut way.tags);
 
@@ -71,7 +45,7 @@ pub fn osm_way_to_compressed_node<const C: usize>(
         bbox,
         tags: super::Fields(combined_fields),
         id: way.id,
-        children: real_children,
+        children,
     })
 }
 

@@ -6,38 +6,17 @@ use crate::{compressed_data::flattened_id, field::Field, removable::remove_non_s
 
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
-use super::{unflattened_id, CompressedOsmData, Fields, FIND_GROUP_MAX_DIFFERENCE};
+use super::{CompressedOsmData, Fields};
 
 pub fn osm_relation_to_compressed_node<const C: usize>(mut relation: Relation, bbox_cache: &StoredBinaryTree<C, u64, BoundingBox<i32>>) -> Result<CompressedOsmData, OsmObj> {
+    let bbox: Option<BoundingBox<i32>> = relation.refs.iter().map(|r| {
+        let id = flattened_id(&r.member);
+        bbox_cache.find_first_item_at_key_exact(&id)
+    }).collect();
 
-    let mut bounding_boxes = Vec::new();
-    let mut low = flattened_id(&relation.refs[0].member);
-    for (is_last_child, child) in relation.refs.iter().is_final() {
-        let id = flattened_id(&child.member);
-        let stride = id - low;
-
-        if stride >= FIND_GROUP_MAX_DIFFERENCE || is_last_child {
-            low = id;
-            bounding_boxes.extend(bbox_cache
-                .find_entries_in_box(&(low..=id))
-                .filter(|x| {
-                    if relation.refs.iter().any(|c: &Ref| c.member == unflattened_id(x.0)) {
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .map(|x| (x.1)));
-        }
-    }
-
-    if bounding_boxes.len() != relation.refs.len() {
+    let Some(bbox) = bbox else {
         return Err(OsmObj::Relation(relation));
-    }
-
-    let bbox = bounding_boxes.into_iter().collect();
-
-    
+    };
 
     remove_non_stored_tags(&mut relation.tags);
 
