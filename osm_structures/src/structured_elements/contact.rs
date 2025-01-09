@@ -1,15 +1,15 @@
-use minimal_storage::pooled_storage::Pool;
+use minimal_storage::bit_sections::Byte;
+use minimal_storage::pooled_storage::{Pool, PooledId};
 use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
+use minimal_storage::varint::ToVarint;
 use osm_value_atom::LiteralValue;
 
 
 use crate::auxil::string_prefix_view::StrAsciiPrefixView;
 
-use super::insert_with_byte;
-
 const MAX_TAG_LENGTH_PLUS_TWO: usize = 14;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct OsmContactInfo {
     phone: Option<LiteralValue>,
     website: Option<LiteralValue>,
@@ -131,10 +131,46 @@ impl From<OsmContactInfoBuilder> for Option<OsmContactInfo> {
 
 
 impl DeserializeFromMinimal for OsmContactInfo {
-    type ExternalData<'d> = ();
+    type ExternalData<'d> = &'d Pool<LiteralValue>;
 
-    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, _external_data: ()) -> Result<Self, std::io::Error> {
-        todo!()
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, _pool: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {
+        let header: Byte = u8::deserialize_minimal(from, ())?.into();
+
+        let slf = Self::default();
+
+        if header.get_bit(0) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(1) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(2) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(3) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(4) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(5) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(6) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        if header.get_bit(7) != 0 {
+            let _id = PooledId::deserialize_minimal(from, ())?;
+        }
+
+        return Ok(slf); //todo!("Reading from pool");
     }
 }
 
@@ -146,74 +182,60 @@ impl SerializeMinimal for OsmContactInfo {
         let mut buf = Vec::new();
         buf.push(0);
 
-        let mut header_byte = 0;
+        let mut header_byte = Byte::from(0);
 
-        insert_with_byte(
-            &self.phone,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            7,
-        )?;
+        header_byte.set_bit(0, self.phone.is_some());
+        header_byte.set_bit(1, self.website.is_some());
+        header_byte.set_bit(2, self.email.is_some());
+        header_byte.set_bit(3, self.facebook.is_some());
 
-        insert_with_byte(
-            &self.website,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            6,
-        )?;
+        header_byte.set_bit(4, self.instagram.is_some());
+        header_byte.set_bit(5, self.vk.is_some());
+        header_byte.set_bit(6, self.twitter.is_some());
+        header_byte.set_bit(7, self.prefix.is_some());
 
-        insert_with_byte(
-            &self.email,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            5,
-        )?;
+        header_byte.into_inner().minimally_serialize(write_to, ())?;
 
-        insert_with_byte(
-            &self.facebook,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            4,
-        )?;
 
-        insert_with_byte(
-            &self.instagram,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            3,
-        )?;
+        if let Some(v) = &self.phone {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
 
-        insert_with_byte(
-            &self.vk,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            2,
-        )?;
+        if let Some(v) = &self.website {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
+        if let Some(v) = &self.email {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
 
-        insert_with_byte(
-            &self.twitter,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            1,
-        )?;
+        if let Some(v) = &self.facebook {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
 
-        insert_with_byte(
-            &self.prefix,
-            pool,
-            &mut buf,
-            &mut header_byte,
-            0,
-        )?;
+        if let Some(v) = &self.instagram {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
 
-        buf[0] = header_byte;
+        if let Some(v) = &self.vk {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
 
-        write_to.write_all(&buf)
+        if let Some(v) = &self.twitter {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
+
+        if let Some(v) = &self.prefix {
+            let id = pool.insert(&v, ())?;
+            id.write_varint(write_to)?;
+        }
+
+        Ok(())
     }
 }

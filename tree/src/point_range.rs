@@ -7,11 +7,9 @@ use minimal_storage::{
     serialize_fast::FastMinSerde, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{FromVarint, ToVarint}
 };
 
-use crate::structure::StoredTree;
-
 use super::tree_traits::{Average, MultidimensionalKey, MultidimensionalParent, Zero};
 
-pub type StoredBinaryTree<const NODE_SATURATION_POINT: usize, K, T> = StoredTree<1, NODE_SATURATION_POINT, K, DisregardWhenDeserializing<K, FastMinSerde<T>>>;
+pub type StoredBinaryTree<const NODE_SATURATION_POINT: usize, K, T> = crate::sparse::structure::StoredTree<1, NODE_SATURATION_POINT, K, T>;
 
 #[repr(transparent)]
 pub struct DisregardWhenDeserializing<Disregard, T>(T, PhantomData<Disregard>);
@@ -129,6 +127,13 @@ impl<T: OneDimensionalCoord> MultidimensionalParent<1> for RangeInclusive<T> {
         self.start() <= child.start() && child.end() <= self.end()
     }
 
+    fn overlaps(&self, child: &Self) -> bool {
+        let i_start = std::cmp::max(self.start(), child.start());
+        let i_end = std::cmp::min(self.end(), child.end());
+
+        i_start < i_end
+    }
+
     fn split_evenly_on_dimension(&self, _dimension: &()) -> (Self, Self) {
         let middle = Average::avg(*self.start(), *self.end());
 
@@ -167,5 +172,13 @@ impl<T: OneDimensionalCoord> MultidimensionalKey<1> for T {
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent {
         *initial + *delta
+    }
+    
+    fn smallest_key_in(parent: &Self::Parent) -> Self {
+        *parent.start()
+    }
+    
+    fn largest_key_in(parent: &Self::Parent) -> Self {
+        *parent.start()
     }
 }

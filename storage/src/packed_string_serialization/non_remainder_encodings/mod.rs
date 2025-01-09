@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 
-use crate::{bit_sections::{BitSection, LowNibble}, serialize_min::ReadExtReadOne};
+use crate::{bit_sections::BitSection, serialize_min::ReadExtReadOne};
 
 pub mod fourbits;
 

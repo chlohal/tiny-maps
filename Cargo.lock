@@ -743,6 +743,7 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 name = "minimal_storage"
 version = "0.1.0"
 dependencies = [
+ "btree_vec",
  "lru_cache",
  "parking_lot",
  "sha2",

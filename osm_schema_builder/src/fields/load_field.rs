@@ -135,21 +135,113 @@ impl FieldData {
         }
     }
     fn serialization_code(&self) -> (&'static str, &'static str) {
-        const WRITE_STATEBITS: &str = "write_to.write_all(&[ external_data.1.into_inner() ])?;";
-
         match self {
-            FieldData::Colour { .. } | FieldData::Number { .. } => ("write_to.write_all(&[ external_data.1.into_inner() ])?; self.0.minimally_serialize(write_to, ())", "Ok(Self(minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, ())?))"),
+            FieldData::MultiYesCombo { .. } | FieldData::Colour { .. } | FieldData::Number { .. } => ("write_to.write_all(&[ external_data.1.into_inner() ])?; self.0.minimally_serialize(write_to, ())", "let _ = external_data; Ok(Self(minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, ())?))"),
             FieldData::Text { .. } => ("self.0.as_str().minimally_serialize(write_to, external_data.1)", "Ok(Self(minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, Some(external_data.1.into_inner()))?))"),
-            FieldData::Checkbox { .. } => ("let mut external_data = external_data; external_data.1.set_bit(0, self.0); write_to.write_all(&[ external_data.1.into_inner() ])", "Ok(Self(external_data.1.get_bit(0) != 0))"),
+            FieldData::Checkbox { .. } => ("let mut external_data = external_data; external_data.1.set_bit(0, self.0); write_to.write_all(&[ external_data.1.into_inner() ])", "let _ = from; Ok(Self(external_data.1.get_bit(0) != 0))"),
             FieldData::Address { .. } => ("write_to.write_all(&[ external_data.1.into_inner() ])?; self.0.minimally_serialize(write_to, external_data.0)", "osm_structures::structured_elements::address::OsmAddress::deserialize_minimal(from, external_data.0).map(|x| Self(x))"),
-            _ => ( "todo!()", "todo!()" ),
-            FieldData::UnitNumber { key } => todo!(),
-            FieldData::LocalizedString { root_key } => todo!(),
-            FieldData::Date { key } => todo!(),
-            FieldData::Combo { .. } => todo!(),
-            FieldData::MultiYesCombo { label, keys } => todo!(),
-            FieldData::SemiCombo { key, options } => todo!(),
-            FieldData::DirectionalCombo { root_key, left_key, right_key, options } => todo!(),
+            FieldData::Combo { .. } => ("self.0.minimally_serialize(write_to, external_data.1.reduce_extent::<4, 8>())", "Ok(Self(minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, external_data.1.reduce_extent::<4,8>())?))"),
+            FieldData::Date { .. } => (
+                r"external_data.1.into_inner().minimally_serialize(write_to, ())?; 
+                    self.0.0.minimally_serialize(write_to, ())?;
+                    self.0.1.minimally_serialize(write_to, ())?;
+                    self.0.2.minimally_serialize(write_to, ())", 
+                r"Ok(Self((
+                    u16::deserialize_minimal(from, ())?,
+                    u8::deserialize_minimal(from, ())?,
+                    u8::deserialize_minimal(from, ())?,
+                )))"
+            ),
+            FieldData::UnitNumber { .. } => (
+                r"self.0.1.as_str().minimally_serialize(write_to, external_data.1)?;
+                self.0.0.minimally_serialize(write_to, ())
+                ",
+                r"
+                let u = minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, Some(external_data.1.into_inner()))?;
+                let n = f64::deserialize_minimal(from, ())?;
+                Ok(Self((n, u)))
+                ",
+            ),
+            FieldData::SemiCombo { options, .. } => {
+                assert!(options.len() < 256);
+
+                (r"
+                    external_data.1.into_inner().minimally_serialize(write_to, ())?;
+                    self.0.len().minimally_serialize(write_to, ())?;
+
+                    for i in self.0.iter() {
+                        (*i as u8).minimally_serialize(write_to, ())?;
+                    }
+
+                    Ok(())
+                ", r"
+                let len = usize::deserialize_minimal(from, ())?;
+                let mut v = Vec::with_capacity(len);
+
+                for _ in 0..len {
+                    let val = u8::deserialize_minimal(from, ())?;
+                    let val = unsafe { std::mem::transmute(val)  };
+                    v.push(val)
+                }
+
+                Ok(Self(v))
+                ")
+            },
+            FieldData::DirectionalCombo { .. } => ( "self.0.minimally_serialize(write_to, external_data.1.into_inner().into())",
+                "Ok(Self(minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, external_data.1.reduce_extent())?))"
+            ),
+            FieldData::LocalizedString { .. } => (
+                r"let mut nibble = external_data.1.into_inner_masked();
+                
+                if self.0.len() < 16 {    
+                    nibble |= 0b1_0000 | (self.0.len() as u8);
+                    nibble.minimally_serialize(write_to, ())?;
+                } else {
+                    nibble.minimally_serialize(write_to, ())?;
+                    self.0.len().minimally_serialize(write_to, ())?;
+                }
+
+                for (k, v) in self.0.iter() {
+                    let ch1_index = k[0] - b'a';
+                    let ch2_index = k[1] - b'a';
+
+                    debug_assert!(ch1_index < 32);
+                    debug_assert!(ch2_index < 32);
+
+                    let ch1 = (k[0] - b'a' << 3) + k[1] >> 2;
+                    let ch2 = (k[1] & 0b11) << 6;
+
+                    ch1.minimally_serialize(write_to, ())?;
+                    ch2.minimally_serialize(write_to, ())?;
+                    v.as_str().minimally_serialize(write_to, ch2.into())?;
+                }
+                Ok(())
+                ",
+
+                r"let nibble = external_data.1.into_inner();
+                
+                let length = if nibble & 0b1_0000 != 0 {
+                    (nibble & 0b1111) as usize
+                } else {
+                    usize::deserialize_minimal(from, ())?
+                 };
+
+                 let mut map = std::collections::HashMap::with_capacity(length);
+
+                 for _ in 0..length {
+                    let ch1 = u8::deserialize_minimal(from, ())?;
+                    let ch2 = u8::deserialize_minimal(from, ())?;
+
+                    let k = [ (ch1 >> 3) + b'a' , (((ch1 & 0b111) << 2) & (ch2 >> 6)) + b'a'];
+
+                    let v = minimal_storage::serialize_min::DeserializeFromMinimal::deserialize_minimal(from, Some(ch1))?;
+
+                    map.insert(k, v);
+                 }
+
+                 Ok(Self(map))
+                "
+            ),
             FieldData::Access {  } => ("todo!()", "todo!()"),
         }
     }
@@ -198,7 +290,7 @@ impl FieldData {
             {state_init}
         }}
 
-        fn update_state<S: std::convert::From<&'static str> + AsRef<str> + PartialEq<&'static str>>(tag: (S, S), {update_state_varname}: &mut Self::State)  -> Option<(S, S)> {{
+        fn update_state<S: std::convert::From<&'static str> + AsRef<str> + for<'a> PartialEq<&'a str>>(tag: (S, S), {update_state_varname}: &mut Self::State)  -> Option<(S, S)> {{
             let (k,v) = tag;
             {code_to_match_valid_kv_sets}
         }}
@@ -220,7 +312,7 @@ impl FieldData {
         }}
 
         impl minimal_storage::serialize_min::DeserializeFromMinimal for {name} {{
-            type ExternalData<'d> = (&'d mut minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<0, 3, u8>);
+            type ExternalData<'d> = (&'d mut minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<5, 8, u8>);
 
             fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
                 {deser_code}
@@ -246,8 +338,7 @@ impl FieldData {
         }
     }
 
-    fn trait_match_map(&self, name: &str) -> (bool, String) {
-        let key = self.key();
+    fn trait_match_map(&self, _name: &str) -> (bool, String) {
 
         match self.key_count() {
             AbstractKeyCount::One => {
@@ -270,7 +361,6 @@ impl FieldData {
                 FieldData::MultiYesCombo { keys, .. } => {
                     let code_to_set_property_based_on_key_with_value_known_to_be_yes =
                         gen_multiyes_set_property(keys);
-                    let vtype = self.datatype();
                     (true, format!(
                         r#"
                             if v == "yes" {{
@@ -280,10 +370,11 @@ impl FieldData {
                     "#
                     ))
                 }
-                FieldData::LocalizedString { root_key } => {
+                FieldData::LocalizedString { .. } => {
                     (false, format!("Some((k,v))"))
                 }
-                FieldData::Access {} | FieldData::Address { .. } => (false, "todo!()".to_string()),
+                FieldData::Address { .. } => (true, "state.update(k, v)".to_string()),
+                FieldData::Access {} => (false, "todo!()".to_string()),
                 _ => unreachable!(),
             },
         }
@@ -349,27 +440,50 @@ impl FieldData {
     fn make_value_pattern_matcher(&self) -> String {
         match self {
             FieldData::Text { .. } => "Some(v.as_ref().into())".to_string(),
-            FieldData::Number { key } => "<f64 as std::str::FromStr>::from_str(&v.as_ref()).ok()".to_string(),
-            FieldData::UnitNumber { key } => "todo!()".to_string(),
-            FieldData::Colour { key } => "osm_structures::structured_elements::colour::OsmColour::from_str(v.as_ref())".to_string(),
-            FieldData::LocalizedString { root_key } => "Some(v)".to_string(),
-            FieldData::Date { key } => "todo!()".to_string(),
+            FieldData::Number { .. } => "<f64 as std::str::FromStr>::from_str(&v.as_ref()).ok()".to_string(),
+            FieldData::UnitNumber { .. } => r"
+                                                        {
+                                                            let s = v.as_ref();
+                                                            let mut f = 0;
+                                                            if s.chars().nth(0).is_some_and(|x| x == '-') {
+                                                                f += 1;
+                                                            }
+
+                                                            for c in s.chars() {
+                                                                if c.is_ascii_digit() || c == '.' {
+                                                                    f += 1;
+                                                                    continue;
+                                                                } else {
+                                                                    break;
+                                                                }   
+                                                            }
+                                                            <f64 as std::str::FromStr>::from_str(&s[0..f]).ok().map(|x| (x, s[f..].to_string()))
+                                                        }
+                                                        ".to_string(),
+            FieldData::Colour { .. } => "osm_structures::structured_elements::colour::OsmColour::from_str(v.as_ref())".to_string(),
+            FieldData::Date { .. } => r" loop {
+                let mut components = v.as_ref().split('-');
+                let Some(y) = components.next() else { break None; };
+                let m = components.next();
+                let d = components.next();
+
+                let Some(y) = <u16 as std::str::FromStr>::from_str(y).ok() else { break None; };
+                let m = m.and_then(|m| <u8 as std::str::FromStr>::from_str(m).ok()).unwrap_or(0xff);
+                let d = d.and_then(|d| <u8 as std::str::FromStr>::from_str(d).ok()).unwrap_or(0xff);
+
+                break Some((y,m,d));
+            }
+            ".to_string(),
             FieldData::Combo { key, options } => options_to_formatted_kv(&format!("{}Value", slugify(key, RustStruct)), &options),
             FieldData::SemiCombo { key, options } => format!(
                 "v.as_ref().split(';').map(|v| {}).collect::<Option<Vec<_>>>()",
                 options_to_formatted_kv(&format!("{}Value", slugify(key, RustStruct)), options)
             ),
-            FieldData::DirectionalCombo {
-                root_key,
-                left_key,
-                right_key,
-                options,
-            } => todo!(),
-            FieldData::Checkbox { key } => {
+            FieldData::Checkbox { .. } => {
                 r#"if v == "yes" { Some(true) } else if v == "no" { Some(false) } else { None }"#
                     .to_string()
             }
-            FieldData::Address { .. } | FieldData::Access {} | FieldData::MultiYesCombo { .. } => {
+            FieldData::LocalizedString { .. } | FieldData::DirectionalCombo { ..} | FieldData::Address { .. } | FieldData::Access {} | FieldData::MultiYesCombo { .. } => {
                 unreachable!()
             }
         }
@@ -382,7 +496,7 @@ impl FieldData {
                 let try_make_value = self.make_value_pattern_matcher();
                 format!(
                     r#"impl {typename} {{
-                     pub(in crate::fields) fn try_into_field<S: AsRef<str> + std::convert::From<&'static str> + PartialEq<&'static str>>(k: S, v: S) -> Result<(S, S), crate::fields::AnyOsmField> {{
+                     pub(in crate::fields) fn try_into_field<S: AsRef<str> + std::convert::From<&'static str> + for<'a> PartialEq<&'a str>>(k: S, v: S) -> Result<(S, S), crate::fields::AnyOsmField> {{
                         if k == {key:?} {{
                             if let Some(val) = {try_make_value} {{
                                 return Err(crate::fields::AnyOsmField::{enum_name}({typename}(val)))
@@ -426,7 +540,7 @@ impl FieldData {
             FieldData::MultiYesCombo { .. } => format!("Some(({name}(state)).into())"),
             FieldData::DirectionalCombo { .. } => format!("Some(({name}(state?)).into())"),
             FieldData::Access { .. } => "todo!()".to_string(),
-            FieldData::Address { .. } => format!("state.to_option().map(|x| crate::fields::AnyOsmField::from(({name}(x))))"),
+            FieldData::Address { .. } => format!("state.to_option().map(|x| crate::fields::AnyOsmField::from({name}(x)))"),
             _ => "state".to_string()
         };
 
@@ -469,13 +583,82 @@ fn generate_directional_enum(
     let right_key = slugify(right_key, RustStruct);
     let root_key = slugify(root_key, RustStruct);
 
+    let ser_deser_code = format!("
+    impl minimal_storage::serialize_min::DeserializeFromMinimal for {root_key}Directional {{
+            type ExternalData<'d> = minimal_storage::bit_sections::LowNibble;
+
+            fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
+                let discrim = external_data.into_inner() & 0b11;
+                match discrim {{
+                    0b00 => {{
+                        let nib = u8::deserialize_minimal(from, ())?;
+                        {root_key}Value::deserialize_minimal(from, nib.into()).map(|x| Self::Unidirectional(x))
+                    }},
+                    0b11 => {{
+                        let nib_left = u8::deserialize_minimal(from, ())?;
+                        let left = {root_key}Value::deserialize_minimal(from, nib_left.into())?;
+
+                        let nib_right = u8::deserialize_minimal(from, ())?;
+                        let right = {root_key}Value::deserialize_minimal(from, nib_right.into())?;
+
+                        Ok(Self::Bidirectional(left, right))
+                    }},
+                    0b10 => {{
+                        let nib = u8::deserialize_minimal(from, ())?;
+                        {root_key}Value::deserialize_minimal(from, nib.into()).map(|x| Self::{left_key}Only(x))
+                    }},
+                    0b01 => {{
+                        let nib = u8::deserialize_minimal(from, ())?;
+                        {root_key}Value::deserialize_minimal(from, nib.into()).map(|x| Self::{right_key}Only(x))
+                    }},
+                    _ => unreachable!()
+                }}
+            }}
+        }}
+
+        impl minimal_storage::serialize_min::SerializeMinimal for {root_key}Directional {{
+            type ExternalData<'s> = minimal_storage::bit_sections::LowNibble;
+
+            fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
+                let mut nib = external_data.into_inner();
+                match self {{
+                    Self::Unidirectional(v) => {{
+                        nib |= 0b00;
+                        nib.minimally_serialize(write_to, ())?;
+
+                        v.minimally_serialize(write_to, 0.into())
+                    }},
+                    Self::Bidirectional(l, r) => {{
+                        nib |= 0b11;
+                        nib.minimally_serialize(write_to, ())?;
+
+                        l.minimally_serialize(write_to, 0.into())?;
+                        r.minimally_serialize(write_to, 0.into())
+                    }},
+                    Self::{left_key}Only(v) => {{
+                        nib |= 0b10;
+                        nib.minimally_serialize(write_to, ())?;
+
+                        v.minimally_serialize(write_to, 0.into())
+                    }},
+                    Self::{right_key}Only(v) => {{
+                        nib |= 0b01;
+                        nib.minimally_serialize(write_to, ())?;
+
+                        v.minimally_serialize(write_to, 0.into())
+                    }},
+                }}
+            }}
+        }}
+    ");
+
     format!(
         "#[derive(PartialEq, Clone, Copy, Debug)]\npub enum {root_key}Directional {{ 
         Unidirectional({root_key}Value),
         Bidirectional({root_key}Value, {root_key}Value),
         {left_key}Only({root_key}Value),
         {right_key}Only({root_key}Value),
-    }}
+    }}\n\n{ser_deser_code}\n
     \n{}",
         generate_values_enum(&root_key, options)
     )
@@ -501,11 +684,11 @@ fn generate_values_enum(root_key: &str, options: &[String]) -> String {
     let (ser_code, deser_code) = match enum_count {
         //Smallest: this can fit into the nibble of extra data we get, without adding any more bytes!
         0..16 => {
-            ("external_data.copy_from(*self as u8); external_data.into_inner().minimally_serialize(write_to, ())", "let _from = from; Ok(unsafe { std::mem::transmute( external_data.into_inner_masked() ) })")
+            ("let mut external_data = external_data; external_data.copy_from(*self as u8); external_data.into_inner().minimally_serialize(write_to, ())", "let _from = from; Ok(unsafe { std::mem::transmute( external_data.into_inner_masked() ) })")
         },
         //larger: this can fit into one u8. we assert during build that there aren't more than 256 enum variants
         0..256 => {
-            ("(*self as u8).minimally_serialize(write_to, ())", "Ok(unsafe { std::mem::transmute(u8::deserialize_minimal(from, ())?) })")
+            ("external_data.into_inner().minimally_serialize(write_to, ())?; (*self as u8).minimally_serialize(write_to, ())", "Ok(unsafe { std::mem::transmute(u8::deserialize_minimal(from, ())?) })")
         },
         _ => unreachable!()
     };
@@ -513,7 +696,7 @@ fn generate_values_enum(root_key: &str, options: &[String]) -> String {
     //implement serialization traits
     s += &format!("
     impl minimal_storage::serialize_min::DeserializeFromMinimal for {root_key}Value {{
-            type ExternalData<'d> = &'d minimal_storage::bit_sections::LowNibble;
+            type ExternalData<'d> = minimal_storage::bit_sections::LowNibble;
 
             fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
                 {deser_code}
@@ -521,7 +704,7 @@ fn generate_values_enum(root_key: &str, options: &[String]) -> String {
         }}
 
         impl minimal_storage::serialize_min::SerializeMinimal for {root_key}Value {{
-            type ExternalData<'s> = &'s mut minimal_storage::bit_sections::LowNibble;
+            type ExternalData<'s> = minimal_storage::bit_sections::LowNibble;
 
             fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
                 {ser_code}
@@ -532,18 +715,61 @@ fn generate_values_enum(root_key: &str, options: &[String]) -> String {
     s
 }
 
-fn generate_selections_struct(wrapper_struct: &str, root_key: &str, suffixes: &[String]) -> String {
+fn generate_selections_struct(_wrapper_struct: &str, root_key: &str, suffixes: &[String]) -> String {
     let root_key = slugify(root_key, RustStruct);
+
+    let mut ser_code = "".to_string();
+    let mut deser_code = "let mut s = Self::default();\n".to_string();
 
     let mut s = format!("#[derive(Default, PartialEq, Clone, Debug)]\npub struct {root_key}Selections {{\n");
 
-    for suff in suffixes {
+    for suff in suffixes.iter() {
         s.push_str("    ");
         s.push_str(&slugify(suff, RustIdent));
         s.push_str(": bool,\n");
     }
 
     s.push('}');
+
+    for chunk in suffixes.chunks(32) {
+        ser_code.push_str("let mut n = 0u32;\n");
+        deser_code.push_str("let n = u32::deserialize_minimal(from, ())?;\n");
+
+        for (i, suf) in chunk.iter().enumerate() {
+            write!(&mut ser_code, "if self.{} {{ n |= 1 << {i}; }}\n", slugify(suf, RustIdent)).unwrap();
+
+            write!(&mut deser_code, "if (n & (1 << {i})) != 0 {{ s.{} = true; }} \n", slugify(suf, RustIdent)).unwrap();
+        }
+
+        ser_code.push_str("n.minimally_serialize(write_to, ())?;\n");
+    }
+
+    ser_code.push_str("Ok(())");
+    deser_code.push_str("Ok(s)");
+
+
+    let enum_count = suffixes.len();
+    assert!(enum_count < 256);
+
+
+    //implement serialization traits
+    s += &format!("
+    impl minimal_storage::serialize_min::DeserializeFromMinimal for {root_key}Selections {{
+            type ExternalData<'d> = ();
+
+            fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
+                {deser_code}
+            }}
+        }}
+
+        impl minimal_storage::serialize_min::SerializeMinimal for {root_key}Selections {{
+            type ExternalData<'s> = ();
+
+            fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
+                {ser_code}
+            }}
+        }}
+    ");
 
     s
 }

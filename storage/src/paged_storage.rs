@@ -1,13 +1,22 @@
 use std::{
-    cmp::min, fs::File, io::{self, BufReader, BufWriter, Read, Seek, Write}, ops::{Deref, DerefMut}, path::PathBuf, sync::{atomic::AtomicBool, Arc, Mutex, RwLock}
+    cmp::min,
+    io::{self, BufReader, BufWriter, Read, Seek, Write},
+    ops::DerefMut,
+    path::PathBuf,
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
+
+use parking_lot::lock_api::RawRwLock;
+use parking_lot::{ArcRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 const THOUSAND: usize = 1024;
 const PAGE_HEADER_SIZE: usize = 16;
 
 const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 3000;
 
-use crate::{cache::{Cache, SizeEstimate}, serialize_fast::MinimalSerdeFast};
+use crate::{
+    cache::{Cache, SizeEstimate}, pooled_storage::Filelike, serialize_fast::MinimalSerdeFast
+};
 
 use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 
@@ -15,7 +24,7 @@ use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 pub struct PageId<const PAGE_SIZE: usize>(usize);
 
 impl<const K: usize> DeserializeFromMinimal for PageId<K> {
-    type ExternalData<'d> = (); 
+    type ExternalData<'d> = ();
 
     fn deserialize_minimal<'a, 'd: 'a, R: Read>(
         from: &'a mut R,
@@ -23,39 +32,34 @@ impl<const K: usize> DeserializeFromMinimal for PageId<K> {
     ) -> Result<Self, std::io::Error> {
         <usize as MinimalSerdeFast>::fast_deserialize_minimal(from, ()).map(PageId)
     }
-    
+
     fn read_past<'a, 'd: 'a, R: Read>(
         from: &'a mut R,
         _external_data: Self::ExternalData<'d>,
     ) -> std::io::Result<()> {
         <usize as MinimalSerdeFast>::fast_seek_after(from)
     }
-    
-    
-
-    
 }
 
 impl<const K: usize> SerializeMinimal for PageId<K> {
     type ExternalData<'d> = ();
 
+    #[inline]
     fn minimally_serialize<'a, 's: 'a, W: Write>(
         &'a self,
         write_to: &mut W,
-        _external_data: Self::ExternalData<'s>,
+        external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        let inner = (self.0 as usize).to_le_bytes();
-        write_to.write_all(&inner)
+        <usize as MinimalSerdeFast>::fast_minimally_serialize(&self.0, write_to, external_data)
     }
 }
 
 impl<const K: usize> PageId<K> {
-
     #[cfg(debug_assertions)]
     pub fn new(inner: usize) -> Self {
         Self(inner)
-    } 
-    
+    }
+
     fn byte_offset(&self) -> u64 {
         (self.0 * K * THOUSAND) as u64
     }
@@ -87,23 +91,22 @@ impl<const K: usize> PageId<K> {
 }
 
 #[derive(Debug)]
-pub struct PagedStorage<const PAGE_SIZE_K: usize, T>
+pub struct PagedStorage<const PAGE_SIZE_K: usize, T, File: Filelike = std::fs::File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K>>>,
-    cache: Cache<PageId<PAGE_SIZE_K>, Page<PAGE_SIZE_K, T>>
+    pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K, File>>>,
+    cache: Cache<PageId<PAGE_SIZE_K>, Page<PAGE_SIZE_K, T, File>>,
 }
 
 #[derive(Debug)]
-struct PageUse<const PAGE_SIZE_K: usize>
-{
+struct PageUse<const PAGE_SIZE_K: usize, File: Filelike > {
     lowest_unallocated_id: usize,
     freed_pages: Vec<PageId<PAGE_SIZE_K>>,
     file: File,
 }
 
-impl<const K: usize> PageUse<K> {
+impl<const K: usize, File:Filelike> PageUse<K, File> {
     pub fn alloc_new(&mut self) -> PageId<K> {
         if let Some(p) = self.freed_pages.pop() {
             return p;
@@ -118,21 +121,15 @@ impl<const K: usize> PageUse<K> {
 
         let newer_lowest_unallocated_id = new_id_num + 1;
 
-        
-
-        file
-            .seek(io::SeekFrom::Start(PAGE_HEADER_SIZE as u64))
+        file.seek(io::SeekFrom::Start(PAGE_HEADER_SIZE as u64))
             .unwrap();
-        file
-            .write_all(&newer_lowest_unallocated_id.to_le_bytes())
+        file.write_all(&newer_lowest_unallocated_id.to_le_bytes())
             .unwrap();
 
         if file.metadata().unwrap().len() < id.end_byte_offset() {
             file.set_len(id.end_byte_offset()).unwrap();
         }
-        file
-            .seek(io::SeekFrom::Start(id.byte_offset()))
-            .unwrap();
+        file.seek(io::SeekFrom::Start(id.byte_offset())).unwrap();
         file.write_all(&[0; PAGE_HEADER_SIZE]).unwrap();
 
         id
@@ -143,13 +140,11 @@ impl<const K: usize> PageUse<K> {
 
         let file = &mut self.file;
 
-        file
-            .seek(io::SeekFrom::Start(old_page.byte_offset()))
+        file.seek(io::SeekFrom::Start(old_page.byte_offset()))
             .unwrap();
         new_page.minimally_serialize(&mut *file, ()).unwrap();
 
-        file
-            .seek(io::SeekFrom::Start(new_page.byte_offset() + 8))
+        file.seek(io::SeekFrom::Start(new_page.byte_offset() + 8))
             .unwrap();
         old_page.minimally_serialize(&mut *file, ()).unwrap();
 
@@ -186,13 +181,11 @@ impl<const K: usize> PageUse<K> {
     }
 }
 
-impl<const K: usize, T> PagedStorage<K, T>
+impl<const K: usize, T, File: Filelike> PagedStorage<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    pub fn open(id: PathBuf) -> Self {
-        let mut file = open_file(&id);
-
+    pub fn open(mut file: File) -> Self {
         let lowest_unallocated_id = match file.metadata().unwrap().len() {
             0 => 1, //if it's a blank file, default to 1 as the lowest unallocated ID (0 is reserved)
             _ => {
@@ -216,7 +209,7 @@ where
 
         Self {
             pageuse,
-            cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size())
+            cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size()),
         }
     }
 
@@ -229,7 +222,7 @@ where
             dirty: true.into(),
             component_pages: vec![id],
         };
-        
+
         self.cache.insert(id, page);
 
         id
@@ -239,7 +232,7 @@ where
         &'a self,
         page_id: &PageId<K>,
         deserialize_data: <T as DeserializeFromMinimal>::ExternalData<'b>,
-    ) -> Option<Arc<Page<K, T>>> {
+    ) -> Option<Arc<Page<K, T, File>>> {
         if !self.pageuse.lock().unwrap().is_valid(page_id) {
             return None;
         }
@@ -254,23 +247,14 @@ where
 
         Some(self.cache.insert(*page_id, page))
     }
-    
+
     pub fn flush(&self) {
         self.cache.evict_all_possible();
     }
 }
 
-fn open_file(path: &PathBuf) -> File {
-    File::options()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(&path)
-        .unwrap()
-}
-
 #[derive(Debug)]
-pub struct Page<const PAGE_SIZE_K: usize, T>
+pub struct Page<const PAGE_SIZE_K: usize, T, File: Filelike>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
@@ -278,46 +262,95 @@ where
     dirty: AtomicBool,
     component_pages: Vec<PageId<PAGE_SIZE_K>>,
 
-    pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K>>>
+    pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K, File>>>,
 }
 
-
-impl<const K: usize, T> SizeEstimate for Page<K, T>
-where
-    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal
-    {
-        fn estimated_bytes(&self) -> usize {
-        self.component_pages.len() * PageId::<K>::byte_size()
-    }
-    }
-
-impl<const K: usize, T> Page<K, T>
+impl<const K: usize, T, File: Filelike> SizeEstimate for Page<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    pub fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a {
-        self.item.read().unwrap()
+    fn estimated_bytes(&self) -> usize {
+        self.component_pages.len() * PageId::<K>::byte_size()
+    }
+}
+
+pub type PageRwLock<T> = RwLock<T>;
+pub type PageReadLock<'a, T> = RwLockReadGuard<'a, T>;
+pub type PageWriteLock<'a, T> = RwLockWriteGuard<'a, T>;
+pub struct PageArcReadLock<const K: usize, T, File: Filelike>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    rwlock: Arc<Page<K, T, File>>,
+}
+
+impl<const K: usize, T, File: Filelike> std::ops::Deref for PageArcReadLock<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        //SAFETY: A PageArcReadLock always holds a shared lock.
+        unsafe { &*self.rwlock.item.data_ptr() }
+    }
+}
+
+impl<const K: usize, T, File: Filelike> Drop for PageArcReadLock<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: A PageArcReadLock always holds a shared lock.
+        unsafe {
+            self.rwlock.item.force_unlock_read();
+        }
+    }
+}
+
+impl<const K: usize, T, File: Filelike> Page<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    pub fn read_owned(&self) -> PageReadLock<T> {
+        todo!()
+    }
+    pub fn read<'a>(&'a self) -> PageReadLock<'a, T> {
+        self.item.read()
+    }
+    pub fn read_arc(self: &Arc<Self>) -> PageArcReadLock<K, T, File> {
+        unsafe {
+            self.item.raw().lock_shared();
+            //safety: holds lock!
+            PageArcReadLock {
+                rwlock: Arc::clone(self),
+            }
+        }
     }
 
-    pub fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
+    pub fn write<'a>(&'a self) -> PageWriteLock<'a, T> {
         self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
 
-        self.item.write().unwrap()
+        self.item.write()
     }
 
     fn open<'a>(
-        pageuse: &Arc<Mutex<PageUse<K>>>,
+        pageuse: &Arc<Mutex<PageUse<K, File>>>,
         page_id: &PageId<K>,
         deserialize: <T as DeserializeFromMinimal>::ExternalData<'a>,
     ) -> std::io::Result<Self> {
         let pg = &mut pageuse.lock().unwrap();
 
-        let mut reader = BufReader::with_capacity(PageId::<K>::data_size(), PageReader::<K, true> {
-            file: &mut pg.file,
-            page_ids_acc: vec![*page_id],
-            current_page_id: *page_id,
-            current_page_read_amount: 0,
-        });
+        let mut reader = BufReader::with_capacity(
+            PageId::<K>::data_size(),
+            PageReader::<K, true, File> {
+                file: &mut pg.file,
+                page_ids_acc: vec![*page_id],
+                current_page_id: *page_id,
+                current_page_read_amount: 0,
+            },
+        );
 
         let item = T::deserialize_minimal(&mut reader, deserialize)?;
 
@@ -332,7 +365,6 @@ where
     }
 
     fn flush<'a>(&mut self) -> std::io::Result<()> {
-
         let mut storage = self.pageuse.lock().unwrap();
 
         if self.dirty.load(std::sync::atomic::Ordering::Relaxed) {
@@ -344,7 +376,7 @@ where
                 },
             });
 
-            self.item.get_mut().unwrap().minimally_serialize(&mut writer, ())?;
+            self.item.get_mut().minimally_serialize(&mut writer, ())?;
             writer.flush()?;
 
             let writer = writer
@@ -358,9 +390,7 @@ where
 
             let freed_pages = match state {
                 WriterState::Begin { to_write }
-                | WriterState::WritingAllocated { to_write, .. } => {
-                    Vec::from(to_write)
-                },
+                | WriterState::WritingAllocated { to_write, .. } => Vec::from(to_write),
                 _ => vec![],
             };
 
@@ -380,7 +410,7 @@ where
     }
 }
 
-impl<const K: usize, T> Drop for Page<K, T>
+impl<const K: usize, T, File: Filelike> Drop for Page<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
@@ -392,12 +422,12 @@ where
 }
 
 pub(super) fn read_page_header<const K: usize>(
-    file: &mut File,
+    file: &mut impl Filelike,
     page_id: &PageId<K>,
 ) -> std::io::Result<Option<PageId<K>>> {
     let pos_bytes = page_id.byte_offset();
 
-    file.seek(io::SeekFrom::Start(pos_bytes))?;
+    std::io::Seek::seek(file, io::SeekFrom::Start(pos_bytes))?;
     let next_page = PageId::deserialize_minimal(file, ())?;
 
     Ok(next_page.as_valid())
@@ -439,15 +469,13 @@ impl<'a, const K: usize> WriterState<'a, K> {
 }
 
 #[derive(Debug)]
-struct PageWriter<'a, const PAGE_SIZE_K: usize>
-{
-    storage: &'a mut PageUse<PAGE_SIZE_K>,
+struct PageWriter<'a, const PAGE_SIZE_K: usize, File: Filelike> {
+    storage: &'a mut PageUse<PAGE_SIZE_K, File>,
     added_pages: Vec<PageId<PAGE_SIZE_K>>,
     state: WriterState<'a, PAGE_SIZE_K>,
 }
 
-impl<'a, const K: usize> Write for PageWriter<'a, K>
-{
+impl<'a, const K: usize, File: Filelike> Write for PageWriter<'a, K, File> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let (current_page, current_data_offset) = match self.state {
             WriterState::Begin { mut to_write } => {
@@ -521,14 +549,14 @@ fn slice_pop<'a, 'b, T>(slice: &'a mut &'b [T]) -> Option<&'b T> {
     Some(head)
 }
 
-struct PageReader<'a, const PAGE_SIZE_K: usize, const BUILD_COMPONENT_ID_LIST: bool> {
+struct PageReader<'a, const PAGE_SIZE_K: usize, const BUILD_COMPONENT_ID_LIST: bool, File: Filelike> {
     file: &'a mut File,
     page_ids_acc: Vec<PageId<PAGE_SIZE_K>>,
     current_page_id: PageId<PAGE_SIZE_K>,
     current_page_read_amount: usize,
 }
 
-impl<'a, const K: usize, const B: bool> Read for PageReader<'a, K, B> {
+impl<'a, const K: usize, const B: bool, F: Filelike> Read for PageReader<'a, K, B, F> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let available_space = PageId::<K>::data_size() - self.current_page_read_amount;
 
@@ -544,7 +572,7 @@ impl<'a, const K: usize, const B: bool> Read for PageReader<'a, K, B> {
         self.current_page_read_amount += read_count;
 
         if self.current_page_read_amount == PageId::<K>::data_size() {
-            let next_page_id = read_page_header(&mut self.file, &self.current_page_id)?;
+            let next_page_id = read_page_header(self.file, &self.current_page_id)?;
 
             if let Some(next_page_id) = next_page_id {
                 if B {
@@ -566,6 +594,15 @@ mod test {
 
     use super::*;
 
+    pub fn open_file(path: &str) -> std::fs::File {
+        std::fs::File::options()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap()
+    }
+
     mod store_many_pages {
         use super::*;
 
@@ -576,7 +613,7 @@ mod test {
             let blob_count = 2000;
 
             let _ = std::fs::remove_file(".test");
-            let mut storage = PagedStorage::<4, Vec<usize>>::open(".test".into());
+            let storage = PagedStorage::<4, Vec<usize>>::open(open_file(".test"));
             let mut ids = Vec::new();
 
             //initial population
@@ -639,7 +676,7 @@ mod test {
     #[test]
     pub fn store_one_page() {
         let _ = std::fs::remove_file(".test");
-        let mut storage = PagedStorage::<4, _>::open(".test".into());
+        let storage = PagedStorage::<4, _>::open(open_file(".test"));
 
         let mut ids = Vec::new();
 

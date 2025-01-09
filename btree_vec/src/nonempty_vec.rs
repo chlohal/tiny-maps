@@ -1,4 +1,5 @@
 
+#[derive(Clone)]
 pub struct NonEmptyUnorderVec<T>(T, Vec<T>);
 
 impl<T> NonEmptyUnorderVec<T> {
@@ -12,9 +13,21 @@ impl<T> NonEmptyUnorderVec<T> {
     pub fn iter<'a>(&'a self) -> Iter<'a, T> {
         Iter(Some(&self.0), self.1.iter())
     }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index == 0 {
+            return Some(&self.0);
+        } else {
+            return self.1.get(index - 1);
+        }
+    }
     
     pub fn into_iter_with_front(self) -> (T, std::vec::IntoIter<T>) {
         (self.0, self.1.into_iter())
+    }
+    
+    pub fn len(&self) -> usize {
+        1 + self.1.len()
     }
 }
 

@@ -1,18 +1,22 @@
-use std::path::PathBuf;
+use std::{collections::VecDeque, path::PathBuf, sync::OnceLock};
 
 use btree_vec::BTreeVec;
 use minimal_storage::{
-    paged_storage::PageId, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::ToVarint, StorageReachable
+    paged_storage::PageId,
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    varint::ToVarint,
+    StorageReachable,
 };
 
 use crate::{
-    split_id, structure::Inner, tree_traits::{
+    dense::{structure::Inner, tree::split_id},
+    tree_traits::{
         Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue, Zero,
-    }
+    },
 };
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
-    for Inner<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>
+    for Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -42,8 +46,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> DeserializeFromMinimal
-    for Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+    DeserializeFromMinimal for Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -56,11 +60,9 @@ where
     ) -> Result<Self, std::io::Error> {
         let child_len = usize::deserialize_minimal(from, ())?;
 
-        let mut children = BTreeVec::with_capacity(child_len);
-
         let mut last_bbox = Key::DeltaFromParent::zero();
 
-        for _ in 0..child_len {
+        let children_sorted_deque = (0..child_len).map(|_| {
             let delt_delt_bbox = Key::DeltaFromSelfAsChild::deserialize_minimal(from, ())?;
 
             let delt_bbox = Key::apply_delta_from_self(&delt_delt_bbox, &last_bbox);
@@ -70,8 +72,13 @@ where
 
             let item = Value::deserialize_minimal(from, &abs_bbox)?;
 
-            children.push(delt_bbox, item);
-        }
+            Ok((delt_bbox, item))
+        });
+
+        let children: std::io::Result<
+            BTreeVec<<Key as MultidimensionalKey<DIMENSION_COUNT>>::DeltaFromParent, Value>,
+        > = unsafe { BTreeVec::from_sorted_iter_failable(child_len, children_sorted_deque) };
+        let children = children?;
 
         Ok(Self { children })
     }
@@ -86,8 +93,9 @@ where
 {
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> DeserializeFromMinimal
-    for crate::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+    DeserializeFromMinimal
+    for crate::dense::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -110,7 +118,7 @@ where
 }
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
-    for crate::structure::Root<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>
+    for crate::dense::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -130,8 +138,9 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> DeserializeFromMinimal
-    for crate::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+    DeserializeFromMinimal
+    for crate::dense::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -149,6 +158,7 @@ where
     ) -> Result<Self, std::io::Error> {
         let has_split = u8::deserialize_minimal(from, ())? != 0;
         let page_id = PageId::deserialize_minimal(from, ())?;
+        let children_count = usize::deserialize_minimal(from, ())?.into();
 
         let left_right_split = if has_split {
             let (left_id, right_id) = split_id(id);
@@ -156,7 +166,7 @@ where
             let (left_bbox, right_bbox) = parent.split_evenly_on_dimension(&direction);
             let next_dir = direction.next_axis();
 
-            Some((
+            OnceLock::from((
                 Box::new(Self::deserialize_minimal(
                     from,
                     (root_path, left_id, left_bbox, next_dir),
@@ -167,12 +177,13 @@ where
                 )?),
             ))
         } else {
-            None
+            OnceLock::new()
         };
 
         Ok(Self {
             bbox: parent,
             page_id,
+            children_count,
             left_right_split,
             id,
             __phantom: std::marker::PhantomData,
@@ -181,7 +192,7 @@ where
 }
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
-    for crate::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+    for crate::dense::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
@@ -193,10 +204,13 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        match &self.left_right_split {
+        match &self.left_right_split.get() {
             Some((l, r)) => {
                 (1u8).minimally_serialize(write_to, ())?;
                 self.page_id.minimally_serialize(write_to, ())?;
+                self.children_count
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    .minimally_serialize(write_to, ())?;
 
                 l.minimally_serialize(write_to, external_data)?;
                 r.minimally_serialize(write_to, external_data)?;
@@ -204,6 +218,9 @@ where
             None => {
                 (0u8).minimally_serialize(write_to, ())?;
                 self.page_id.minimally_serialize(write_to, ())?;
+                self.children_count
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    .minimally_serialize(write_to, ())?;
             }
         }
 

@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitAndAssign, BitOrAssign, BitXor, Not, Shl, Shr, ShrAssign};
+use std::ops::{BitAnd, BitAndAssign, BitOrAssign, Not, Shl, Shr, ShrAssign};
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
@@ -51,7 +51,7 @@ where
         let mut mask = T::default();
         let mut i = 0;
 
-        let high_set = T::from(true) << (std::mem::size_of::<T>() * 8);
+        let high_set = T::from(true) << ((std::mem::size_of::<T>() * 8) - 1);
 
         while i != Self::bits() {
             i += 1;
@@ -79,12 +79,10 @@ where
 }
 
 mod test {
-    use crate::bit_sections::{BitSection, HighNibble, LowNibble};
-
-    use super::Byte;
-
     #[test]
     fn set_bit() {
+        use crate::bit_sections::Byte;
+
         let mut byte = Byte::from(0);
         byte.set_bit(0, true);
         assert_eq!(byte.into_inner(), 0b1000_0000);
@@ -96,6 +94,8 @@ mod test {
 
     #[test]
     fn mask() {
+        use crate::bit_sections::{BitSection, HighNibble, LowNibble, Byte};
+
         assert_eq!(Byte::mask(), 0b1111_1111);
 
         assert_eq!(LowNibble::mask(), 0b1111);

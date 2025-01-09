@@ -1,13 +1,14 @@
 use std::{env, fs::File, io::Write};
 
 use clap::Parser;
+use minimal_storage::packed_string_serialization::is_final::IterIsFinal;
 use offline_tiny_maps::compressor::Compressor;
 
 use osmpbfreader::blobs::result_blob_into_iter;
 
 use par_map::ParMap;
 
-const WRITE_EVERY_N_CHUNKS: usize = 8;
+const WRITE_EVERY_N_CHUNKS: usize = 1;
 
 fn main() {
     let args = Args::parse();
@@ -17,39 +18,53 @@ fn main() {
     let mut reader = osmpbfreader::OsmPbfReader::new(&file);
 
     let state_dir = env::current_dir()
-    .unwrap()
-    .join(args.output.unwrap_or(".map".into()));
+        .unwrap()
+        .join(args.output.unwrap_or(".map".into()));
 
     let mut compressor = Compressor::new(&state_dir);
 
-    //we need to make a new reader in order to get the blob count, but this iterator is much faster than anything else b/c it doesn't need to 
+    //we need to make a new reader in order to get the blob count, but this iterator is much faster than anything else b/c it doesn't need to
     //decompress or process
-    let blob_count = osmpbfreader::OsmPbfReader::new(File::open(&args.osmpbf).expect("File doesn't exist!")).blobs().count();
+    let blob_count =
+        osmpbfreader::OsmPbfReader::new(File::open(&args.osmpbf).expect("File doesn't exist!"))
+            .blobs()
+            .count();
+        
 
-    let blobs = reader
-        .blobs()
-        .enumerate()
-        .par_flat_map(|(i, x)| result_blob_into_iter(x).map(move |x| (i, x)));
+    let mut blobs = reader
+        .blobs();
+    let mut blobs_done = 0;
 
-    let mut last_blob_id = usize::MAX;
-    let mut blobs_since_last_write = 0;
+    loop {
+        let completed = std::thread::scope(|scope| {
+            let mut finished = 0;
+            for _ in 0..WRITE_EVERY_N_CHUNKS {
+                if let Some(blob) = blobs.next() {
+                    dbg!("chunk :)");
+                    finished += scope.spawn(|| {
+                        let objs = result_blob_into_iter(blob);
 
-    for (blob_id, obj) in blobs {
-        let Ok(obj) = obj else {
-            continue;
-        };
+                        for obj in objs {
+                            if let Ok(obj) = obj {
+                                compressor.write_element(obj)
+                            }
+                        }
 
-        compressor.write_element(obj);
+                        1
+                    }).join().unwrap();
+                }
+            }
 
-        if blob_id != last_blob_id {
-            blobs_since_last_write += 1;
-            last_blob_id = blob_id;
-        }
+            finished
+        });
+        dbg!(completed);
+        blobs_done += completed;
 
-        if blobs_since_last_write >= WRITE_EVERY_N_CHUNKS {
-            println!("Chunk {blob_id}/{blob_count} finished");
-            compressor.flush_to_storage().unwrap();
-            blobs_since_last_write = 0;
+        println!("{blobs_done}/{blob_count} chunks finished");
+        compressor.flush_to_storage().unwrap();
+
+        if completed == 0 {
+            break;
         }
     }
 
@@ -57,11 +72,12 @@ fn main() {
 
     let incompleted_relations = compressor.attempt_retry_queue();
 
-    let mut incomplete_file = std::fs::File::create(&state_dir.join("incomplete_relations.note")).unwrap();
+    let mut incomplete_file =
+        std::fs::File::create(&state_dir.join("incomplete_relations.note")).unwrap();
 
     writeln!(&mut incomplete_file, "Incomplete relations:").unwrap();
     for item in incompleted_relations {
-        writeln!(&mut incomplete_file, "{}", item.id().inner_id()).unwrap();
+        writeln!(&mut incomplete_file, "{:?}", item.id()).unwrap();
     }
 
     compressor.flush_to_storage().unwrap();

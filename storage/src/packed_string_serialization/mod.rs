@@ -1,8 +1,6 @@
-use std::{mem::discriminant, ops::BitOrAssign};
-
 use is_final::IterIsFinal;
 
-use crate::{bit_sections::{BitSection, Byte, LowNibble}, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{from_varint, ToVarint}};
+use crate::{bit_sections::{BitSection, Byte}, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{from_varint, ToVarint}};
 
 pub mod latin_lowercase_fivebit;
 pub mod non_remainder_encodings;

@@ -1,35 +1,65 @@
-use minimal_storage::{pooled_storage::Pool, serialize_min::SerializeMinimal};
+use minimal_storage::{packed_string_serialization::is_final::IterIsFinal, pooled_storage::Pool, serialize_min::SerializeMinimal};
 use osm_value_atom::LiteralValue;
 use osmpbfreader::{OsmObj, Ref, Relation, RelationId};
 
-use crate::{compressed_data::flattened_id, field::Field, tag_compressing::{self, relation::inline_relation_tags, InlinedTags}};
+use crate::{compressed_data::flattened_id, field::Field, removable::remove_non_stored_tags};
 
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
-use super::CompressedOsmData;
+use super::{unflattened_id, CompressedOsmData, Fields, FIND_GROUP_MAX_DIFFERENCE};
 
-pub fn osm_relation_to_compressed_node<const C: usize>(relation: Relation, bbox_cache: &mut StoredBinaryTree<C, u64, BoundingBox<i32>>) -> Result<CompressedOsmData, OsmObj> {
+pub fn osm_relation_to_compressed_node<const C: usize>(mut relation: Relation, bbox_cache: &StoredBinaryTree<C, u64, BoundingBox<i32>>) -> Result<CompressedOsmData, OsmObj> {
 
-    let bbox: Option<BoundingBox<i32>> = relation.refs.iter().map(|child| {
+    let mut bounding_boxes = Vec::new();
+    let mut low = flattened_id(&relation.refs[0].member);
+    for (is_last_child, child) in relation.refs.iter().is_final() {
         let id = flattened_id(&child.member);
-        
-        let child_box = bbox_cache.find_first_item_at_key_exact(&id)?.into_inner();
+        let stride = id - low;
 
-        Some(child_box.0)
-    }).collect();
+        if stride >= FIND_GROUP_MAX_DIFFERENCE || is_last_child {
+            low = id;
+            bounding_boxes.extend(bbox_cache
+                .find_entries_in_box(&(low..=id))
+                .filter(|x| {
+                    if relation.refs.iter().any(|c: &Ref| c.member == unflattened_id(x.0)) {
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .map(|x| (x.1)));
+        }
+    }
 
-    let Some(bbox) = bbox else { return Err(OsmObj::Relation(relation)) };
+    if bounding_boxes.len() != relation.refs.len() {
+        return Err(OsmObj::Relation(relation));
+    }
 
-    let tags = inline_relation_tags(relation.tags);
+    let bbox = bounding_boxes.into_iter().collect();
 
-    Ok(CompressedOsmData::Relation { bbox, tags, id: relation.id, refs: relation.refs })
+    
+
+    remove_non_stored_tags(&mut relation.tags);
+
+    let (fields, tags) = osm_tags_to_fields::fields::parse_tags_to_fields(relation.tags);
+
+    let mut combined_fields = Vec::with_capacity(fields.len() + tags.len());
+
+    for t in fields {
+        combined_fields.push(Field::Field(t));
+    }
+    for (k,v) in tags.iter() {
+        combined_fields.push((k, v).into());
+    }
+
+    Ok(CompressedOsmData::Relation { bbox, tags: Fields(combined_fields), id: relation.id, refs: relation.refs })
 }
 
 pub fn serialize_relation<W: std::io::Write>(
     write_to: &mut W,
     pools: &mut (Pool<Field>, Pool<LiteralValue>),
     id: &RelationId,
-    tags: &InlinedTags<tag_compressing::relation::Relation>,
+    tags: &Fields,
     children: &Vec<Ref>
 ) -> Result<(), std::io::Error> {
     
@@ -44,7 +74,7 @@ pub fn serialize_relation<W: std::io::Write>(
     id.0.minimally_serialize(write_to, ())?;
 
     //and just chuck all the literals into the literal pool and then put em at the end.
-    let literals = &tags.other;
+    let literals = &tags.0;
 
     literals.len().minimally_serialize(write_to, ())?;
     for literal in literals.iter() {

@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::{atomic::{AtomicBool, AtomicUsize}, OnceLock}};
 
 use btree_vec::BTreeVec;
 use minimal_storage::
@@ -14,7 +14,7 @@ where
 {
     pub(crate) storage: TreePagedStorage<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
     pub(crate) root: Root<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>,
-    pub(crate) structure_dirty: bool,
+    pub(crate) structure_dirty: AtomicBool,
     pub(crate) structure_file: std::fs::File,
 }
 
@@ -35,9 +35,10 @@ where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
-    pub(super) page_id: PageId<PAGE_SIZE>,
+    pub(super) page_id: PageId<{ PAGE_SIZE }>,
+    pub(super) children_count: AtomicUsize,
     pub(super) bbox: Key::Parent,
-    pub(super) left_right_split: Option<(
+    pub(super) left_right_split: OnceLock<(
         Box<Node<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>>,
         Box<Node<DIMENSION_COUNT,  NODE_SATURATION_POINT, Key, Value>>,
     )>,

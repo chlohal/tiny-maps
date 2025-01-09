@@ -183,3 +183,59 @@ where
 
     
 }
+
+
+//for arrays, the length is statically known and doesn't need to be stored
+impl<const LEN: usize, T: SerializeMinimal> SerializeMinimal for [T; LEN]
+where
+    for<'a> T::ExternalData<'a>: Copy,
+{
+    type ExternalData<'d> = T::ExternalData<'d>;
+
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        for item in self.iter() {
+            item.minimally_serialize(write_to, external_data)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<const LEN: usize, T: DeserializeFromMinimal> DeserializeFromMinimal for [T; LEN]
+where
+    for<'a> T::ExternalData<'a>: Copy,
+{
+    type ExternalData<'d> = T::ExternalData<'d>;
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        let mut v: [T; LEN] = unsafe { std::mem::zeroed() };
+
+        for i in 0..LEN {
+            v[i] = T::deserialize_minimal(from, external_data)?;
+        }
+
+        Ok(v)
+    }
+    
+    fn read_past<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> std::io::Result<()> {
+        let length = usize::deserialize_minimal(from, ())?;
+
+        for _ in 0..length {
+            T::read_past(from, external_data)?;
+        }
+
+        Ok(())
+    }
+
+    
+}

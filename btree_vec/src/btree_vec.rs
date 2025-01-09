@@ -1,26 +1,28 @@
-use std::{
-    cmp::Ordering,
-    collections::{vec_deque, VecDeque},
-};
+use std::{cmp::Ordering, vec};
 
 use crate::nonempty_vec::NonEmptyUnorderVec;
 
+#[derive(Clone)]
 pub struct BTreeVec<K, V> {
-    itms: VecDeque<(K, NonEmptyUnorderVec<V>)>,
+    itms: Vec<(K, NonEmptyUnorderVec<V>)>,
+    len: usize,
 }
 
 impl<K, V> Default for BTreeVec<K, V> {
     fn default() -> Self {
         Self {
             itms: Default::default(),
+            len: 0,
         }
     }
 }
 
 impl<K: Ord + Clone, V> BTreeVec<K, V> {
     pub fn push(&mut self, key: K, value: V) {
-        if self.itms.back().is_some_and(|x| key > x.0) {
-            self.itms.push_back((key, NonEmptyUnorderVec::new(value)));
+        self.len += 1;
+        
+        if self.itms.last().is_some_and(|x| key > x.0) {
+            self.itms.push((key, NonEmptyUnorderVec::new(value)));
             return;
         }
 
@@ -39,18 +41,20 @@ impl<K: Ord + Clone, V> BTreeVec<K, V> {
     }
 
     pub fn len(&self) -> usize {
-        self.itms.len()
+        self.len
     }
 
     pub fn with_capacity(len: usize) -> Self {
         Self {
-            itms: VecDeque::with_capacity(len),
+            itms: Vec::with_capacity(len),
+            len: 0,
         }
     }
 
     pub fn new() -> Self {
         Self {
-            itms: VecDeque::new(),
+            itms: Vec::new(),
+            len: 0,
         }
     }
 
@@ -70,10 +74,111 @@ impl<K: Ord + Clone, V> BTreeVec<K, V> {
 
         return self.itms.binary_search_by(f);
     }
+    pub unsafe fn from_sorted_iter_failable<E>(
+        len: usize,
+        iter: impl Iterator<Item = Result<(K, V), E>>,
+    ) -> Result<Self, E> {
+        let itms = deduplicate(iter)?;
+
+        Ok(Self { len, itms })
+    }
+
+    pub unsafe fn from_raw_parts(len: usize, itms: Vec<(K, NonEmptyUnorderVec<V>)>) -> Self {
+        Self { len, itms }
+    }
+}
+
+fn deduplicate<K: Eq, V, E>(
+    mut iter: impl Iterator<Item = Result<(K, V), E>>,
+) -> Result<Vec<(K, NonEmptyUnorderVec<V>)>, E> {
+    let mut vec = Vec::with_capacity(iter.size_hint().1.unwrap_or_default());
+
+    let Some(v) = iter.next() else {
+        return Ok(vec);
+    };
+    let (k, v) = v?;
+    let mut old_key_value = (k, NonEmptyUnorderVec::new(v));
+
+    loop {
+        match iter.next() {
+            None => {
+                vec.push(old_key_value);
+                return Ok(vec);
+            }
+            Some(trier) => {
+                let (new_key, new_value) = trier?;
+
+                if new_key == old_key_value.0 {
+                    old_key_value.1.push(new_value);
+                } else {
+                    let mut new_key_value = (new_key, NonEmptyUnorderVec::new(new_value));
+                    std::mem::swap(&mut old_key_value, &mut new_key_value);
+
+                    vec.push(new_key_value);
+                }
+            }
+        }
+    }
+}
+
+pub trait SeparateStateIteratable {
+    type State;
+    type Item<'s>
+    where
+        Self: 's;
+
+    ///
+    /// Retrieve or create initial state to begin iteration.
+    /// While this State exists, the underlying container should not be modified.
+    /// If it is modified, then any type invariants will not be violated from continued iteration,
+    /// but items may be skipped or yielded multiple times.
+    fn begin_iteration(&self) -> Self::State;
+    fn stateless_next<'s>(&'s self, state: Self::State) -> Option<(Self::State, Self::Item<'s>)>;
+}
+
+impl<K: Ord + 'static, V: 'static> BTreeVec<K, V> {
+    pub fn begin_range(
+        &self,
+        start: K
+    ) -> <Self as SeparateStateIteratable>::State {
+        let start_col = match self.itms.binary_search_by_key(&&start, |x| &x.0) {
+            Ok(i) => i,
+            Err(i) => i,
+        };
+
+        (start_col, 0)
+    }
+}
+
+impl<K: 'static, V: 'static> SeparateStateIteratable for BTreeVec<K, V> {
+    type State = (usize, usize);
+
+    type Item<'s> = (&'s K, &'s V);
+
+    fn begin_iteration(&self) -> Self::State {
+        (0, 0)
+    }
+
+    fn stateless_next<'s>(&'s self, state: Self::State) -> Option<(Self::State, Self::Item<'s>)> {
+        let (mut r, mut c) = state;
+        loop {
+            let (key, column) = self.itms.get(r)?;
+
+            let Some(value) = column.get(c) else {
+                r += 1;
+                c = 0;
+                continue;
+            };
+
+            c += 1;
+
+            return Some(((r, c), (key, value)));
+        }
+    }
 }
 
 pub struct Iter<'a, K, V> {
-    inner: vec_deque::Iter<'a, (K, NonEmptyUnorderVec<V>)>,
+    inner: std::slice::Iter<'a, (K, NonEmptyUnorderVec<V>)>,
     current_tail_iter: Option<(&'a K, crate::nonempty_vec::Iter<'a, V>)>,
 }
 
@@ -101,7 +206,7 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
 }
 
 pub struct IntoIter<K: Clone, V> {
-    inner: vec_deque::IntoIter<(K, NonEmptyUnorderVec<V>)>,
+    inner: vec::IntoIter<(K, NonEmptyUnorderVec<V>)>,
     current: Option<(K, std::vec::IntoIter<V>)>,
 }
 

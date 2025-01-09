@@ -8,13 +8,13 @@ use osm_structures::structured_elements::{address::OsmAddress, contact::OsmConta
 
 #[derive(Clone, Debug)]
 pub enum Field {
-    Other(String, LiteralValue),
+    Other(LiteralValue, LiteralValue),
     Field(AnyOsmField),
 }
 
-impl<A: Into<String>, B: Into<LiteralValue>> From<(A, B)> for Field {
+impl<A: AsRef<str>, B: Into<LiteralValue>> From<(A, B)> for Field {
     fn from(value: (A, B)) -> Self {
-        Field::Other(value.0.into(), value.1.into())
+        Field::Other(value.0.as_ref().into(), value.1.into())
     }
 }
 

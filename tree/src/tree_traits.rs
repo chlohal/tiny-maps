@@ -12,6 +12,7 @@ pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
     type DimensionEnum: Dimension<DIMENSION_COUNT>;
 
     fn contains(&self, child: &Self) -> bool;
+    fn overlaps(&self, child: &Self) -> bool;
     fn split_evenly_on_dimension(&self, dimension: &Self::DimensionEnum) -> (Self, Self);
 }
 
@@ -30,6 +31,15 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
 
     fn delta_from_parent(&self, parent: &Self::Parent) -> Self::DeltaFromParent;
     fn apply_delta_from_parent(delta: &Self::DeltaFromParent, parent: &Self::Parent) -> Self;
+
+    /// Can be overriden if wished for speed, but must be equivalent
+    /// to `Self::apply_delta_from_parent(delta, parent).is_contained_in(parent)`.
+    fn delta_from_parent_would_be_contained(delta: &Self::DeltaFromParent, from: &Self::Parent, container: &Self::Parent) -> bool {
+        Self::apply_delta_from_parent(delta, from).is_contained_in(container)
+    }
+
+    fn smallest_key_in(parent: &Self::Parent) -> Self;
+    fn largest_key_in(parent: &Self::Parent) -> Self;
 
     fn delta_from_self(
         finl: &Self::DeltaFromParent,

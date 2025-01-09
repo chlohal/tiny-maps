@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fs::read_dir,
     io::Write,
     path::PathBuf,
@@ -13,14 +13,10 @@ use crate::util::{slugify, SlugificationMethod};
 mod load_field;
 mod load_field_data;
 mod mod_tree;
-mod parser;
 
 pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
     write_to.write_all(
-        br"use crate::stateful_iterate::StatefulIterate;
-        use std::str::FromStr;
-        
-        trait OsmField {
+        br"trait OsmField {
         const FIELD_ID: u16;
     }
         trait StatefulOsmField {
@@ -28,7 +24,7 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
 
         fn init_state() -> Self::State;
 
-        fn update_state<S: std::convert::From<&'static str> + AsRef<str> + PartialEq<&'static str>>(tag: (S, S), state: &mut Self::State)  -> Option<(S, S)>;
+        fn update_state<S: std::convert::From<&'static str> + AsRef<str> + for<'a> PartialEq<&'a str>>(tag: (S, S), state: &mut Self::State)  -> Option<(S, S)>;
 
         fn end_state(state: Self::State) -> Option<crate::fields::AnyOsmField>;
     }
@@ -217,7 +213,7 @@ fn write_field_structs(
 
         write!(
             write_to,
-            "#[derive(PartialEq, Clone, Debug)]\npub struct {}({});\n\n{}\n{}",
+            "#[derive(Clone, Debug)]\npub struct {}({});\n\n{}\n{}",
             field.name,
             field.data.datatype(),
             field.data.datatype_def(&field.name).unwrap_or_default(),

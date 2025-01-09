@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::HashMap,
     io::Write,
 };
 
@@ -10,104 +10,76 @@ pub enum TagMatcher {
     Tag(String, String),
 }
 
-pub enum DeprecationInstruction {
-    Remove(String),
-    Match(TagMatcher),
-    LoadStore(String, String),
-    Write(String, String),
+pub enum Deprecation {
+    RenameKey {
+        from: String,
+        to: String,
+    },
+    RemoveKey {
+        key: String,
+    },
+    RemoveKeyval {
+        key: String,
+        value: String,
+    },
+    RenameKeyval {
+        from: (String, String),
+        to: (String, String),
+    },
+    RenameValue {
+        key: String,
+        from: String,
+        to: String,
+    },
+    ExpandSingleToMultiple {
+        from: (String, String),
+        to: Vec<(String, String)>,
+    },
+    StoreSingleAndExpandToMultiple {
+        from_key: String,
+        to_key: String,
+        add: Vec<(String, String)>,
+    },
+    ArbitraryStateful {
+        from: Vec<(String, String)>,
+        to: Vec<(String, String)>,
+        copy_value_fromto: Option<(String, String)>,
+    },
 }
-
-impl DeprecationInstruction {
-    pub fn is_remove(&self) -> bool {
+impl Deprecation {
+    fn as_arbitrary_stateful(
+        &self,
+    ) -> Option<(
+        &Vec<(String, String)>,
+        &Vec<(String, String)>,
+        &Option<(String, String)>,
+    )> {
         match self {
-            DeprecationInstruction::Remove(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_match(&self) -> bool {
-        match self {
-            DeprecationInstruction::Match(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_load_store(&self) -> bool {
-        match self {
-            DeprecationInstruction::LoadStore(_, _) => true,
-            _ => false,
-        }
-    }
-    pub fn is_write(&self) -> bool {
-        match self {
-            DeprecationInstruction::Write(_, _) => true,
-            _ => false,
-        }
-    }
-    pub fn as_match_expression(&self) -> Option<String> {
-        let DeprecationInstruction::Match(mat) = self else {
-            return None;
-        };
-
-        Some(match mat {
-            TagMatcher::Key(k) => format!("key == {k:?}"),
-            TagMatcher::Tag(k, v) => format!("key == {k:?} && value == {v:?}"),
-        })
-    }
-
-    fn as_write_expression(&self) -> Option<String> {
-        let DeprecationInstruction::Write(key, value) = self else {
-            return None;
-        };
-
-        if value == "*" {
-            Some(format!("({key:?}.into(), \"yes\".into())"))
-        } else {
-            Some(format!("({key:?}.into(), {value:?}.into())"))
-        }
-    }
-
-    fn as_single_load_expression(&self) -> Option<String> {
-        let DeprecationInstruction::LoadStore(_from, to) = self else {
-            return None;
-        };
-
-        Some(format!("({to:?}.into(), value)"))
-    }
-
-    fn load_from_key(&self) -> Option<&String> {
-        match self {
-            DeprecationInstruction::LoadStore(from, _) => Some(from),
-            _ => None,
-        }
-    }
-
-    fn match_key(&self) -> Option<&String> {
-        match self {
-            DeprecationInstruction::Match(TagMatcher::Key(k)) => Some(k),
-            DeprecationInstruction::Match(TagMatcher::Tag(k, _)) => Some(k),
+            Self::ArbitraryStateful {
+                from,
+                to,
+                copy_value_fromto,
+            } => Some((from, to, copy_value_fromto)),
             _ => None,
         }
     }
 }
 
-fn load_discards() -> Vec<Vec<DeprecationInstruction>> {
+fn load_discards() -> Vec<Deprecation> {
     let discard_file =
         open_json("id-tagging-schema-data/discarded.json").expect("deprecated.json should exist");
 
-    discard_file
-        .as_object()
-        .expect("discarded.json must be an object")
-        .into_iter()
-        .map(|(k, _)| {
-            vec![DeprecationInstruction::Match(TagMatcher::Key(
-                k.to_string(),
-            ))]
-        })
-        .collect()
+    match discard_file {
+        serde_json::Value::Object(o) => Some(o),
+        _ => None,
+    }
+    .expect("discarded.json must be an object")
+    .into_iter()
+    .map(|(k, _)| Deprecation::RemoveKey { key: k })
+    .collect()
 }
 
-pub fn load_deprecations() -> Vec<Vec<DeprecationInstruction>> {
-    return vec![];
-
+pub fn load_deprecations() -> Vec<Deprecation> {
     let deprecated_file =
         open_json("id-tagging-schema-data/deprecated.json").expect("deprecated.json should exist");
 
@@ -120,213 +92,315 @@ pub fn load_deprecations() -> Vec<Vec<DeprecationInstruction>> {
                 .expect("deprecated.json must be an array of objects")
         });
 
-    deprecated
-        .map(|x| {
-            let old = x
-                .get("old")
-                .map(|x| x.as_object())
-                .flatten()
-                .expect("deprecated.json instructions must have an object 'old' key")
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        k,
-                        v.as_str()
-                            .expect("all values in deprecation instructions must be strings!"),
-                    )
-                })
-                .collect::<HashMap<_, _>>();
-            let new = x
-                .get("replace")
-                .map(|x| {
-                    x.as_object()
-                        .expect("deprecated.json's 'replace' must be an object")
-                        .iter()
-                        .map(|(k, v)| {
-                            (
-                                k,
-                                v.as_str().expect(
-                                    "all values in deprecation instructions must be strings!",
-                                ),
-                            )
-                        })
-                        .collect::<HashMap<_, _>>()
-                })
-                .unwrap_or_default();
+    let mut deps = load_discards();
 
-            (old, new)
-        })
-        .map(|(old, new)| make_deprecation_instructions(old, new))
-        .chain(load_discards())
-        .collect()
+    deps.extend(
+        deprecated
+            .map(|x| {
+                let old = x
+                    .get("old")
+                    .map(|x| x.as_object())
+                    .flatten()
+                    .expect("deprecated.json instructions must have an object 'old' key")
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            v.as_str()
+                                .expect("all values in deprecation instructions must be strings!"),
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
+                let new = x
+                    .get("replace")
+                    .map(|x| {
+                        x.as_object()
+                            .expect("deprecated.json's 'replace' must be an object")
+                            .iter()
+                            .map(|(k, v)| {
+                                (
+                                    k,
+                                    v.as_str().expect(
+                                        "all values in deprecation instructions must be strings!",
+                                    ),
+                                )
+                            })
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .unwrap_or_default();
+
+                (old, new)
+            })
+            .map(|(old, new)| make_deprecation_instructions(old, new)),
+    );
+
+    deps
 }
 
 fn make_deprecation_instructions(
     old: HashMap<&String, &str>,
     new: HashMap<&String, &str>,
-) -> Vec<DeprecationInstruction> {
-    let matchers = old.iter().map(|(k, v)| match *v {
-        "*" => DeprecationInstruction::Match(TagMatcher::Key(k.to_string())),
-        _ => DeprecationInstruction::Match(TagMatcher::Tag(k.to_string(), v.to_string())),
-    });
-
-    let old_keys = old.keys().collect::<HashSet<_>>();
-    let new_keys = new.keys().collect::<HashSet<_>>();
-    let removed_keys = old_keys
-        .difference(&new_keys)
-        .map(|x| DeprecationInstruction::Remove(x.to_string()));
-
-    let loadstore = new
-        .iter()
-        .find(|(_, v)| **v == "$1")
-        .map(|(to_key, _)| {
-            let from_key = old
-                .iter()
-                .find(|(_, v)| **v == "*")
-                .expect("If there is a wildcard acceptor, there must be a wildcard")
-                .0
-                .to_string();
-
-            DeprecationInstruction::LoadStore(from_key, to_key.to_string())
-        })
-        .into_iter();
-
-    let new_keys = new
-        .iter()
-        .filter(|(_, v)| **v != "$1")
-        .map(|(k, v)| DeprecationInstruction::Write(k.to_string(), v.to_string()));
-
-    matchers
-        .chain(removed_keys)
-        .chain(loadstore)
-        .chain(new_keys)
-        .collect()
-}
-
-fn write_depr(
-    write_to: &mut impl Write,
-    instructions: Vec<DeprecationInstruction>,
-) -> std::io::Result<()> {
-    let matches = instructions
-        .iter()
-        .filter(|x| x.is_match())
-        .collect::<Vec<_>>();
-    let is_singlematch = matches.len() == 1;
-    let singlematch = if is_singlematch {
-        instructions.iter().find(|x| x.is_match())
-    } else {
-        None
-    };
-
-    let load_store = instructions.iter().find(|x| x.is_load_store());
-
-    if is_singlematch {
-        let matcher = singlematch.unwrap().as_match_expression().unwrap();
-        let emitters = instructions.iter().filter_map(|x| x.as_write_expression());
-        let loadstorer = load_store
-            .and_then(|x| x.as_single_load_expression())
-            .into_iter();
-
-        let emitter_exprs = emitters.chain(loadstorer).collect::<Vec<_>>();
-
-        //if there's exactly one emitter, we can use an array because it'll have length 1 regardless of branch
-        //otherwise, we need to use the `vec` macro to make a vector.
-        //if there are 0 emitters, then we're good to use a `filter` (as filter_map b/c of ownership)
-        let (method, typ_prefix, typ_suffix) = match emitter_exprs.len() {
-            1 => ("map", "", ""),
-            0 => ("filter_map", "Some(", ")"),
-            _ => ("flat_map", "vec![", "]"),
-        };
-
-        let (typ_prefix_mch, typ_suffix_mch) = if emitter_exprs.is_empty() {
-            ("None", "")
-        } else {
-            (typ_prefix, typ_suffix)
-        };
-
-        let emitter_exprs = emitter_exprs.join(",\n");
-
-        return write!(
-            write_to,
-            r".{method}(|(key, value)| {{
-            if {matcher} {{
-    {typ_prefix_mch}{emitter_exprs}{typ_suffix_mch}
-            }} else {{
-                {typ_prefix}(key, value){typ_suffix}
-            }}
-        }})"
-        );
+) -> Deprecation {
+    //verify that this conforms to the invariant that every match WILL have a corresponding capture
+    if old.values().any(|x| *x == "*") {
+        if !new.is_empty() && !new.values().any(|x| *x == "$1") {
+            panic!("Match without a corresponding capture!");
+        }
     }
 
-    //non-singlematch: we need to statefully iterate
-
-    //whether or not we have a load/store, the state type is always a `Vec<(key, value)>`
-    //because keys are unique, we coouulldd just use the number of keys we've seen to determine if all matches are fulfilled or not,
-    //but we have to hold them back to see if we've found everything or not, so we've got to have a vec.
-    //at the end, the `stateful_filter` will unbuffer everything we don't consume back into the iterator
-
-    //to make loads faster, since there will always be at most one store, we put it in the first slot.
-
-    let matcher_ops = matches
-        .iter()
-        .map(|x| {
-            let matchexpr = x.as_match_expression().unwrap();
-            if load_store.is_some_and(|ls| Some(ls.load_from_key().unwrap()) == x.match_key()) {
-                format!("if {matchexpr} {{ if state.len() == 0 {{ state.push((key, value)); }} else {{ let o = std::mem::replace(&mut state[0], (key,value)); state.push(o); }} }}")
-            } else {
-                format!("if {matchexpr} {{ state.push((key, value)); }}")
+    //replace wildcards in `new` with "yes"
+    let new = {
+        let mut new = new;
+        for v in new.values_mut() {
+            if *v == "*" {
+                *v = "yes";
             }
-        })
-        .collect::<Vec<_>>()
-        .join("else \n");
-
-    let matcher_target_number = matches.len();
-
-    let ls_code = if load_store.is_some() {
-        format!("let value = state.swap_remove(0).1;")
-    } else {
-        String::new()
+        }
+        new
     };
 
-    let emitters = instructions.iter().filter_map(|x| x.as_write_expression());
-    let loadstorer = load_store
-        .and_then(|x| x.as_single_load_expression())
-        .into_iter();
+    if old.len() == 1 {
+        let single_old_value = old.into_iter().next().unwrap();
+        //all removals
+        if new.len() == 0 {
+            if single_old_value.1 == "*" {
+                return Deprecation::RemoveKey {
+                    key: single_old_value.0.to_string(),
+                };
+            } else {
+                return Deprecation::RemoveKeyval {
+                    key: single_old_value.0.to_string(),
+                    value: single_old_value.1.to_string(),
+                };
+            }
+        }
 
-    let emitter_exprs = emitters.chain(loadstorer).collect::<Vec<_>>();
+        //all single swaps
+        if new.len() == 1 {
+            let single_new_value = new.into_iter().next().unwrap();
 
-    let emitter_exprs = emitter_exprs.join(",\n");
+            if single_old_value.1 == "*" && single_new_value.1 == "$1" {
+                return Deprecation::RenameKey {
+                    from: single_old_value.0.to_string(),
+                    to: single_new_value.0.to_string(),
+                };
+            }
 
-    return write!(
-        write_to,
-        r".stateful_filter(Vec::new(), |state, (key, value)| {{
+            //no match without capture, so we MUST have a rename scenario
 
-            {matcher_ops} else {{ return vec![(key, value)]; }}
+            if single_old_value.0 == single_new_value.0 {
+                return Deprecation::RenameValue {
+                    key: single_old_value.0.to_string(),
+                    from: single_old_value.1.to_string(),
+                    to: single_new_value.1.to_string(),
+                };
+            }
 
-            if state.len() == {matcher_target_number} {{
-                {ls_code}
-                state.clear();
-                vec![{emitter_exprs}]
-            }} else {{
-                vec![] 
-            }}
-        }})"
-    );
+            return Deprecation::RenameKeyval {
+                from: (
+                    single_old_value.0.to_string(),
+                    single_old_value.1.to_string(),
+                ),
+                to: (
+                    single_new_value.0.to_string(),
+                    single_new_value.1.to_string(),
+                ),
+            };
+        }
+
+        //expanding! we've dealt with the 0 and the 1 scenarios, so now we have the 2+ scenarios.
+
+        //first, the annoying one of storing:
+        if single_old_value.1 == "*" {
+            let store_to_key = new.iter().find(|x| *x.1 == "$1").unwrap().0.to_string();
+
+            let add = new
+                .into_iter()
+                .filter(|x| *x.0 != store_to_key)
+                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .collect();
+
+            return Deprecation::StoreSingleAndExpandToMultiple {
+                from_key: single_old_value.0.to_string(),
+                to_key: store_to_key,
+                add,
+            };
+        }
+
+        //and then, the simpler one!
+        return Deprecation::ExpandSingleToMultiple {
+            from: (
+                single_old_value.0.to_string(),
+                single_old_value.1.to_string(),
+            ),
+            to: new
+                .into_iter()
+                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .collect(),
+        };
+    }
+
+    //thus, we've dealt with every stateless case: every case with only one old tag.
+    //now, we deal with the arbitrary cases that can result from stateful matches.
+
+    let match_key = old.iter().find(|x| *x.1 == "*").map(|x| x.0.to_string());
+
+    let match_capture_keys = match_key.map(|from_key| {
+        let to_key = new.iter().find(|x| *x.1 == "$1").unwrap().0.to_string();
+
+        (from_key, to_key)
+    });
+
+    let mut old = old;
+    let mut new = new;
+
+    if let Some((from, to)) = &match_capture_keys {
+        old.remove(from);
+        new.remove(to);
+    }
+
+    Deprecation::ArbitraryStateful {
+        from: old
+            .into_iter()
+            .map(|x| (x.0.to_string(), x.1.to_string()))
+            .collect(),
+        to: new
+            .into_iter()
+            .map(|x| (x.0.to_string(), x.1.to_string()))
+            .collect(),
+        copy_value_fromto: match_capture_keys,
+    }
 }
 
 pub fn make_deprecations(write_to: &mut impl Write) -> std::io::Result<()> {
     write!(
         write_to,
-        "use crate::stateful_iterate::StatefulIterate;\n\npub fn apply_deprecations<S: From<&'static str> + PartialEq<&'static str>>(tags: impl Iterator<Item = (S,S)>) -> impl Iterator<Item = (S, S)> {{\n"
+        "pub fn apply_deprecations<S: From<&'static str> + for<'a> PartialEq<&'a str>>(mut tags: impl Iterator<Item = (S,S)>) -> impl Iterator<Item = (S, S)> {{\n"
     )?;
 
-    for depr in load_deprecations() {
-        write!(write_to, "let tags = tags")?;
-        write_depr(write_to, depr)?;
-        write!(write_to, ";\n")?;
+    let depres = load_deprecations();
+
+    let state_storage_needed: Vec<_> = depres
+        .iter()
+        .enumerate()
+        .filter_map(|(i, x)| match x {
+            Deprecation::ArbitraryStateful { .. } => Some(i),
+            _ => None,
+        })
+        .collect();
+
+    //make state storage variables! allocate storage for stored variables if it's needed; otherwise, don't bother
+    for i in state_storage_needed.iter() {
+        if depres[*i].as_arbitrary_stateful().unwrap().2.is_some() {
+            write!(
+                write_to,
+                "let mut state_{i}: (Option<(S, S)>, Vec<(S, S)>) = (None, vec![]);\n"
+            )?;
+        } else {
+            write!(write_to, "let mut state_{i}: Vec<(S, S)> = vec![];\n")?;
+        }
     }
 
-    write!(write_to, "tags\n}}")?;
+    let drain_state_code = make_drain_state_code(&state_storage_needed, &depres);
+
+    let deprecation_iteration_code = make_deprecation_iteration_code(&depres);
+
+    write!(
+        write_to,
+        r"
+        let mut drained = false;
+        std::iter::from_fn(move || loop {{
+            let Some(mut tag) = tags.next() else {{  {drain_state_code} }};
+
+            "
+    )?;
+
+    for s in deprecation_iteration_code {
+        write_to.write_all(s.as_bytes())?;
+    }
+
+    write!(
+        write_to,
+        r"
+        
+            return Some(vec![tag]);
+        }}).flatten()
+    
+    "
+    )?;
+
+    write!(write_to, "}}")?;
 
     Ok(())
+}
+
+fn make_deprecation_iteration_code<'a>(
+    deps: &'a Vec<Deprecation>,
+) -> impl Iterator<Item = String> + 'a {
+    deps.iter().enumerate().map(|(i,d)| {
+        match d {
+            Deprecation::RenameKey { from, to } => format!("if tag.0 == {from:?} {{ tag.0 = {to:?}.into(); }}\n"),
+            Deprecation::RemoveKey { key } => format!("if tag.0 == {key:?} {{ return Some(Vec::with_capacity(0)); }}\n"),
+            Deprecation::RemoveKeyval { key, value } => format!("if tag.0 == {key:?} && tag.1 == {value:?} {{ return Some(Vec::with_capacity(0)); }}\n"),
+            Deprecation::RenameKeyval { from: (from_k, from_v), to: (to_k, to_v) } => format!("if tag.0 == {from_k:?} && tag.1 == {from_v:?} {{ tag.0 = {to_k:?}.into(); tag.1 = {to_v:?}.into(); }}\n"),
+            Deprecation::RenameValue { key, from, to } => format!("if tag.0 == {key:?} && tag.1 == {from:?} {{ tag.1 = {to:?}.into(); }}\n"),
+            Deprecation::ExpandSingleToMultiple { from: (key, value), to } => format!("if tag.0 == {key:?} && tag.1 == {value:?} {{ return Some(vec![{}]);  }}\n", to.iter().map(|(k,v)| format!("({k:?}.into(), {v:?}.into()),") ).collect::<String>() ),
+            Deprecation::StoreSingleAndExpandToMultiple { from_key, to_key, add } => format!("if tag.0 == {from_key:?} {{ return Some(vec![ ({to_key:?}.into(), tag.1), {} ]); }}\n", add.iter().map(|(k,v)| format!("({k:?}.into(), {v:?}.into()),") ).collect::<String>()),
+            Deprecation::ArbitraryStateful { from, to, copy_value_fromto } => {
+                let mut s = String::new();
+                let from_taglen = from.len();
+                let (succeed_code, vec_addr) = if let Some((copy_from, copy_to)) = copy_value_fromto {
+                    let suc = format!(r"
+                        if state_{i}.1.len() == {from_taglen} && state_{i}.0.is_some() {{
+                            return Some(vec![({copy_to:?}.into(), state_{i}.0.take().unwrap().1), {}]);
+                        }}
+                    ", to.iter().map(|(k,v)| format!("({k:?}.into(), {v:?}.into()),")).collect::<String>() );
+
+
+                    s += &format!(r"
+                        if tag.0 == {copy_from:?} {{
+                            state_{i}.0 = Some(tag);
+                            {suc}
+                            continue;
+                        }}
+                    ");
+
+                    (suc, format!("state_{i}.1"))
+                } else {
+                    (format!(r"
+                    if state_{i}.len() == {from_taglen} {{
+                        return Some(vec![{}]);
+                    }}
+                ", to.iter().map(|(k,v)| format!("({k:?}.into(), {v:?}.into()),")).collect::<String>() ), format!("state_{i}"))
+                };
+
+                for (k, v) in from.iter() {
+                    s += &format!("if tag.0 == {k:?} && tag.1 == {v:?} {{
+                    {vec_addr}.push(tag);
+                    {succeed_code}
+                    continue;
+                    }}")
+                }
+
+                s
+            },
+        }
+    })
+}
+
+fn make_drain_state_code(index_of_stateful: &Vec<usize>, deps: &Vec<Deprecation>) -> String {
+    let mut s = format!("if drained {{ return None; }} else {{ drained = true; }}\n let mut s = vec![];");
+
+    for i in index_of_stateful.iter() {
+        if deps[*i].as_arbitrary_stateful().unwrap().2.is_some() {
+            s +=
+                &format!("s.extend(state_{i}.0.take().into_iter()); s.extend(state_{i}.1.drain(..));\n");
+        } else {
+            s += &format!("s.extend(state_{i}.drain(..));\n");
+        }
+    }
+
+    s += "return Some(s)";
+
+    s
 }

@@ -1,4 +1,4 @@
-use minimal_storage::{pooled_storage::Pool, varint::{FromVarint, ToVarint}};
+use minimal_storage::{pooled_storage::Pool, varint::ToVarint};
 use osm_value_atom::LiteralValue;
 
 pub mod address;

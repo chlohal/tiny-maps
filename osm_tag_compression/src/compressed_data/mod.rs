@@ -1,4 +1,4 @@
-use node::{osm_node_to_compressed_node, serialize_node};
+use node::{osm_node_to_compressed_node, serialize_node, NodeFields};
 use osm_value_atom::LiteralValue;
 use osmpbfreader::{NodeId, OsmId, OsmObj, Ref, RelationId, WayId};
 use relation::{osm_relation_to_compressed_node, serialize_relation};
@@ -14,7 +14,9 @@ use crate::field::Field;
 
 
 #[derive(Clone, Debug)]
-struct Fields (Vec<Field>);
+pub struct Fields (Vec<Field>);
+
+const FIND_GROUP_MAX_DIFFERENCE: u64 = 8000;
 
 
 mod node;
@@ -61,11 +63,11 @@ impl CompressedOsmData {
 
     pub fn make_from_obj<const C: usize>(
         value: OsmObj,
-        bbox_cache: &mut StoredBinaryTree<C, u64, BoundingBox<i32>>,
+        bbox_cache: &StoredBinaryTree<C, u64, BoundingBox<i32>>,
     ) -> Result<Self, OsmObj> {
         let value = match value {
             OsmObj::Node(n) => osm_node_to_compressed_node(n),
-            OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache),
+            OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache)?,
             OsmObj::Relation(r) => osm_relation_to_compressed_node(r, bbox_cache)?,
         };
 
@@ -76,27 +78,27 @@ impl CompressedOsmData {
 }
 
 pub fn flattened_id(osm_id: &OsmId) -> u64 {
-    let mut inner = osm_id.inner_id() as u64;
+    let inner = osm_id.inner_id();
+    debug_assert!(inner >= 0);
+    let mut inner = inner as u64;
 
     if inner.leading_zeros() < 2 {
         panic!("Excessively big OSM id; no further bits for the enum variant")
     }
 
-    inner <<= 2;
-
     inner |= match osm_id {
         OsmId::Node(_) => 0,
         OsmId::Way(_) => 1,
         OsmId::Relation(_) => 2,
-    };
+    } << 62;
 
     inner
 }
 
 pub fn unflattened_id(id: u64) -> OsmId {
-    let variant = id & 0b11;
+    let variant = (id >> 62);
 
-    let id = (id >> 2) as i64;
+    let id = (id & !(0b11 << 62)) as i64;
 
     match variant {
         0 => OsmId::Node(NodeId(id)),
@@ -109,11 +111,11 @@ pub fn unflattened_id(id: u64) -> OsmId {
 fn insert_bbox<const C: usize>(
     id: &OsmId,
     bbox: BoundingBox<i32>,
-    bbox_cache: &mut StoredBinaryTree<C, u64, BoundingBox<i32>>,
+    bbox_cache: &StoredBinaryTree<C, u64, BoundingBox<i32>>,
 ) {
     let inner = flattened_id(id);
 
-    bbox_cache.insert(&inner, minimal_storage::serialize_fast::FastMinSerde(bbox).into());
+    bbox_cache.insert(inner, bbox);
 }
 
 impl DeserializeFromMinimal for CompressedOsmData {

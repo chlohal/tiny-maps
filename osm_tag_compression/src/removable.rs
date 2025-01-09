@@ -39,7 +39,7 @@ static NON_STORED_TAGS: [&'static str; 30] = [
     "tiger:upload_uuid",
 ];
 
-pub(self) fn remove_non_stored_tags(tags: &mut Tags) {
+pub fn remove_non_stored_tags(tags: &mut Tags) {
     for tag in NON_STORED_TAGS.iter() {
         tags.remove(*tag);
     }

@@ -211,6 +211,20 @@ impl BoundingBox<i32> {
             & (self.y_end >= other.y_end)
     }
 
+    #[inline]
+    pub fn overlaps(&self, other: &BoundingBox<i32>) -> bool {
+        let i_x = std::cmp::max(self.x, other.x);
+        let i_y = std::cmp::max(self.y, other.y);
+        let i_x_end = std::cmp::min(self.x_end, other.x_end);
+        let i_y_end = std::cmp::min(self.y_end, other.y_end);
+
+        if i_x_end < i_x || i_y_end < i_y {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
     pub fn empty() -> BoundingBox<i32> {
         BoundingBox {
             x: 0,
@@ -257,6 +271,10 @@ impl MultidimensionalParent<2> for BoundingBox<i32> {
     fn split_evenly_on_dimension(&self, dimension: &Self::DimensionEnum) -> (Self, Self) {
         self.split_on_axis(dimension)
     }
+    
+    fn overlaps(&self, child: &Self) -> bool {
+        self.overlaps(child)
+    }
 }
 
 impl MultidimensionalKey<2> for BoundingBox<i32> {
@@ -289,6 +307,14 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent {
         DeltaBoundingBox32::from_delta_friendly_offset(delta, initial)
+    }
+    
+    fn smallest_key_in(parent: &Self::Parent) -> Self {
+        BoundingBox { x: parent.x, y: parent.y, x_end: 0, y_end: 0 }
+    }
+    
+    fn largest_key_in(parent: &Self::Parent) -> Self {
+        BoundingBox { x: parent.x_end, y: parent.y_end, x_end: 0, y_end: 0 }
     }
 }
 
@@ -481,6 +507,24 @@ mod test {
             y_end: -1,
         };
         assert!(big.contains(&small));
+    }
+
+    #[test]
+    pub fn overlaps() {
+        let big = BoundingBox {
+            x: 0,
+            y: -900000000,
+            x_end: 1800000000,
+            y_end: 900000000,
+        };
+        let small = BoundingBox {
+            x: 323422752,
+            y: -1,
+            x_end: 323422752,
+            y_end: -1,
+        };
+        assert!(big.overlaps(&small));
+        assert!(small.overlaps(&big));
     }
 
     #[test]

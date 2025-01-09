@@ -2,7 +2,6 @@ use minimal_storage::pooled_storage::Pool;
 use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use minimal_storage::varint::ToVarint;
 use osm_value_atom::LiteralValue;
-use osmpbfreader::Tags;
 
 use crate::auxil::string_prefix_view::StrAsciiPrefixView;
 
