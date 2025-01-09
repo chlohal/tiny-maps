@@ -28,8 +28,6 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        self.children.len().write_varint(write_to)?;
-
         let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
         for (bbox, child) in self.children.iter() {
             debug_assert!(*bbox >= last_bbox);
@@ -52,14 +50,12 @@ where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
-    type ExternalData<'d> = &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent;
+    type ExternalData<'d> = (usize, &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent);
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
-        bbox: Self::ExternalData<'d>,
+        (child_len, bbox): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        let child_len = usize::deserialize_minimal(from, ())?;
-
         let mut last_bbox = Key::DeltaFromParent::zero();
 
         let children_sorted_deque = (0..child_len).map(|_| {
@@ -82,15 +78,6 @@ where
 
         Ok(Self { children })
     }
-}
-
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
-    StorageReachable<<Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent>
-    for Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
-where
-    Key: MultidimensionalKey<DIMENSION_COUNT>,
-    Value: MultidimensionalValue<Key>,
-{
 }
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
