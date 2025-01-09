@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf, sync::Mutex
+    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf, sync::Mutex, usize
 };
 
 use minimal_storage::{pooled_storage::Pool, serialize_fast::FastMinSerde};
@@ -85,7 +85,7 @@ impl Compressor {
     }
 
     pub fn attempt_retry_queue<'a>(&'a mut self) -> impl Iterator<Item = OsmObj> + 'a {
-        let mut len = self.queue_to_handle_at_end.lock().unwrap().len();
+        let mut len = usize::MAX;
 
         //try 5 times to reduce the size
         for attempt in 0..5 {
@@ -93,6 +93,8 @@ impl Compressor {
             //keep going as long as the size reduces. if it stays the same,
             //then fall through to another of the 5 previous tries.
             loop {
+                len = self.queue_to_handle_at_end.lock().unwrap().len();
+
                 println!("{len} items in retry queue...");
                 for _ in 0..len {
                     let elem = self.queue_to_handle_at_end.lock().unwrap().pop_front().unwrap();
@@ -104,7 +106,6 @@ impl Compressor {
                     break;
                 }
             }
-            len = self.queue_to_handle_at_end.lock().unwrap().len();
         }
 
         self.queue_to_handle_at_end.get_mut().unwrap().drain(..)

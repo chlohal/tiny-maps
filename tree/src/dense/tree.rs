@@ -1,7 +1,8 @@
 use std::{
     fs::File,
     io::{Seek, Write},
-    path::PathBuf, sync::atomic::Ordering::SeqCst,
+    path::PathBuf,
+    sync::atomic::Ordering::SeqCst,
 };
 
 use btree_vec::{BTreeVec, SeparateStateIteratable};
@@ -89,7 +90,12 @@ where
         self.root
             .search_all_nodes_touching_area(query)
             .flat_map(move |(node, bbox)| {
-                let page_read = Page::read_arc(&self.storage.get(&node.page_id, (node.children_count.load(SeqCst), &bbox)).unwrap());
+                let page_read = Page::read_arc(
+                    &self
+                        .storage
+                        .get(&node.page_id, (node.children_count.load(SeqCst), &bbox))
+                        .unwrap(),
+                );
 
                 let mut iter_state = page_read.children.begin_iteration();
 
@@ -104,14 +110,18 @@ where
                 })
             })
     }
-
-    pub fn find_first_item_at_key_exact<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
+    pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
         let (leaf, leaf_bbox) = self.root.search_leaf_for_key(query);
 
         let delta = query.delta_from_parent(&leaf_bbox);
 
-        let page = self.storage.get(&leaf.page_id, (leaf.children_count.load(SeqCst), &leaf_bbox)).unwrap();
-
+        let page = self
+            .storage
+            .get(
+                &leaf.page_id,
+                (leaf.children_count.load(SeqCst), &leaf_bbox),
+            )
+            .unwrap();
         let item = page.read().children.get(&delta)?.iter().next().cloned();
 
         item
@@ -122,14 +132,16 @@ where
             self.root.get_key_leaf_splitting_if_needed(k, &self.storage);
 
         let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
-        let mut write_lock = self.storage
-            .get(&leaf.page_id, (leaf.children_count.load(SeqCst), &leaf_bbox))
-            .unwrap()
-            .write();
+        let page = self
+            .storage
+            .get(
+                &leaf.page_id,
+                (leaf.children_count.load(SeqCst), &leaf_bbox),
+            )
+            .unwrap();
+        let mut write_lock = page.write();
 
-        write_lock
-            .children
-            .push(interior_delta_bbox, item);
+        write_lock.children.push(interior_delta_bbox, item);
 
         leaf.children_count
             .fetch_add(1, std::sync::atomic::Ordering::Acquire);
@@ -390,7 +402,12 @@ where
             let mut left_children = BTreeVec::new();
             let mut right_children = BTreeVec::new();
 
-            let page = storage.get(&self.page_id, (self.children_count.load(SeqCst), &self.bbox)).unwrap();
+            let page = storage
+                .get(
+                    &self.page_id,
+                    (self.children_count.load(SeqCst), &self.bbox),
+                )
+                .unwrap();
 
             let mut inner = page.write();
 
@@ -408,8 +425,7 @@ where
                 }
             }
 
-            self.children_count
-                .store(inner.children.len(), SeqCst);
+            self.children_count.store(inner.children.len(), SeqCst);
 
             //ensuring that the drop of the `inner` lock happens AFTER the children_count is updated
             drop(inner);

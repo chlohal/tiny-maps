@@ -21,6 +21,10 @@ impl<T> NonEmptyUnorderVec<T> {
             return self.1.get(index - 1);
         }
     }
+
+    pub fn front(&self) -> &T {
+        &self.0
+    }
     
     pub fn into_iter_with_front(self) -> (T, std::vec::IntoIter<T>) {
         (self.0, self.1.into_iter())

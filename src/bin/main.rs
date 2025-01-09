@@ -1,4 +1,4 @@
-use std::{env, fs::File, io::Write};
+use std::{env, fs::File, io::Write, thread::ScopedJoinHandle};
 
 use clap::Parser;
 use minimal_storage::packed_string_serialization::is_final::IterIsFinal;
@@ -6,9 +6,9 @@ use offline_tiny_maps::compressor::Compressor;
 
 use osmpbfreader::blobs::result_blob_into_iter;
 
-use par_map::ParMap;
+use rayon::prelude::*;
 
-const WRITE_EVERY_N_CHUNKS: usize = 1;
+const WRITE_EVERY_N_CHUNKS: usize = 16;
 
 fn main() {
     let args = Args::parse();
@@ -29,33 +29,26 @@ fn main() {
         osmpbfreader::OsmPbfReader::new(File::open(&args.osmpbf).expect("File doesn't exist!"))
             .blobs()
             .count();
-        
 
-    let mut blobs = reader
-        .blobs();
+    let mut blobs = reader.blobs();
     let mut blobs_done = 0;
 
     loop {
-        let completed = std::thread::scope(|scope| {
-            let mut finished = 0;
-            for _ in 0..WRITE_EVERY_N_CHUNKS {
-                if let Some(blob) = blobs.next() {
-                    dbg!("chunk :)");
-                    finished += scope.spawn(|| {
-                        let objs = result_blob_into_iter(blob);
+        let completed: usize = rayon::scope(|scope| {
+            ((0..WRITE_EVERY_N_CHUNKS).flat_map(|_| {
+                let blob = blobs.next()?;
+                scope.spawn(|_t| {
+                    let objs = result_blob_into_iter(blob);
 
-                        for obj in objs {
-                            if let Ok(obj) = obj {
-                                compressor.write_element(obj)
-                            }
+                    for obj in objs {
+                        if let Ok(obj) = obj {
+                            compressor.write_element(obj)
                         }
-
-                        1
-                    }).join().unwrap();
-                }
-            }
-
-            finished
+                    }
+                });
+                Some(1)
+            }))
+            .sum()
         });
         dbg!(completed);
         blobs_done += completed;

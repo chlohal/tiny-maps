@@ -17,7 +17,7 @@ pub fn test() {
     t.flush().unwrap();
 
     for i in 0..high {
-        let stored_i = t.find_first_item_at_key_exact(&i).unwrap();
+        let stored_i = t.get(&i).unwrap();
 
         assert_eq!(i, stored_i);
     }

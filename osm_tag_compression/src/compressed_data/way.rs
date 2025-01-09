@@ -20,7 +20,7 @@ pub fn osm_way_to_compressed_node<const C: usize>(
     let bbox: Option<BoundingBox<i32>> = way.nodes.iter().map(|node| {
         let id = flattened_id(&OsmId::Node(*node));
         children.push(id);
-        bbox_cache.find_first_item_at_key_exact(&id)
+        bbox_cache.get(&id)
     }).collect();
 
 

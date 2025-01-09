@@ -16,5 +16,5 @@ fn tree() {
 
     dbg!(tree.find_entries_in_box(&(0..=u64::MAX)).collect::<Vec<_>>());
 
-    dbg!(tree.find_first_item_at_key_exact(&flattened_id(&osmpbfreader::OsmId::Node(osmpbfreader::NodeId(1675160938)))));
+    dbg!(tree.get(&flattened_id(&osmpbfreader::OsmId::Node(osmpbfreader::NodeId(1675160938)))));
 }
