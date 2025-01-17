@@ -1,24 +1,35 @@
-use std::{cmp, collections::{BTreeMap, BinaryHeap}, sync::{atomic::{AtomicUsize, Ordering}, Arc, RwLock}};
+use std::{
+    cmp,
+    collections::{BTreeMap, BinaryHeap},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, OnceLock, 
+    },
+};
+
+use parking_lot::{lock_api::RwLockWriteGuard, RwLock};
+
+use debug_logs::debug_print;
 
 pub trait SizeEstimate {
     fn estimated_bytes(&self) -> usize;
 }
 
 #[derive(Debug)]
-pub struct Cache<Key, Value> 
+pub struct Cache<Key, Value>
 where
     Value: SizeEstimate,
-    Key: Ord + Copy
+    Key: Ord + Copy,
 {
-    cache: Arc<RwLock<BTreeMap<Key, (usize, Arc<Value>)>>>,
+    cache: Arc<RwLock<BTreeMap<Key, OnceLock<(usize, Arc<Value>)>>>>,
     cached_bytes: AtomicUsize,
-    max_bytes: usize
+    max_bytes: usize,
 }
 
 impl<K, V> Cache<K, V>
 where
     V: SizeEstimate,
-    K: Ord + Copy
+    K: Ord + Copy,
 {
     pub fn new(max_bytes: usize) -> Self {
         Self {
@@ -27,32 +38,57 @@ where
             max_bytes,
         }
     }
-    pub fn get(&self, id: &K) -> Option<Arc<V>> {
-        let cache = self.cache.read().unwrap();
 
-        cache.get(id).map(|x| Arc::clone(&x.1))
-    }
+    pub fn get_or_insert(&self, id: K, f: impl FnOnce() -> V) -> Arc<V> {
 
-    pub fn insert(&self, id: K, value: V) -> Arc<V> {
-        let mut cache = self.cache.write().unwrap();
+        debug_print!("Cache::get_or_insert started");
 
-        let value_size = value.estimated_bytes();
+        if let Some(prev) = self
+            .cache
+            .read()
+            .get(&id)
+            .and_then(OnceLock::get)
+            .map(|x| Arc::clone(&x.1))
+        {
+            return prev;
+        }
 
-        let value = Arc::new(value);
+        debug_print!("Cache::get_or_insert item doesnt exist in cache");
 
-        let old = cache.insert(id, (value_size, Arc::clone(&value)));
+        //if the item doesn't exist in the cache, then insert it!
+
+        //first, make an empty OnceLock for it.
+        let mut cache = self.cache.write();
+        cache.entry(id).or_insert(OnceLock::new());
+        
+        let cache = RwLockWriteGuard::downgrade(cache);
+
+        debug_print!("Cache::get_or_insert write ended");
+
+        //then, fill it.
+        let (cache_added_bytes, value) = cache.get(&id).unwrap().get_or_init(|| {
+            //this closure can only be active in one thread at once, so no need to worry about multi-thread shenanigains
+            let value = f();
+            let value_size = value.estimated_bytes();
+            let value = Arc::new(value);
+
+            (value_size, value)
+        });
+
+        let value = Arc::clone(value);
+
+        debug_print!("Cache::get_or_insert fill ended");
+
+        //slight possibility of race conditions around `cached_bytes` if
+        //multiple threads try to insert differently sized
+        //values in the same key, but this is only a high-water mark and doesn't need to be exact
+        let cached_bytes = self
+            .cached_bytes
+            .fetch_add(*cache_added_bytes, Ordering::AcqRel);
+
+        debug_print!("Cache::get_or_insert added");
 
         drop(cache);
-
-        let cached_bytes = if let Some((old_size, old)) = old {
-            drop(old);
-
-            self.cached_bytes.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-                Some(v.saturating_sub(old_size) + value_size)
-            }).unwrap()
-        } else {
-            self.cached_bytes.fetch_add(value_size, Ordering::AcqRel)
-        };
 
         if cached_bytes > self.max_bytes {
             self.evict();
@@ -62,18 +98,27 @@ where
     }
 
     fn evict(&self) {
-        let mut cache = self.cache.write().unwrap();
+        debug_print!("Cache::evict started");
 
-        let mut to_rem = BinaryHeap::new();
-        for (k, (size, v)) in cache.iter() {
+        let mut cache = self.cache.write();
+
+        debug_print!("Cache::evict lock attained");
+
+        let to_rem = BinaryHeap::from_iter(cache.iter().flat_map(|(k, v)| {
+            //use Try w/ flat_map to never remove cells which aren't already filled
+            let (size, v) = v.get()?;
             //This is thread-safe because we have a write-lock on the cache,
             //and since the Arc count is 1, the only reference is through the cache.
-            //once it decreases to 1, it can never increase until we release the 
+            //once it decreases to 1, it can never increase until we release the
             //write lock at the end of this function.
             if Arc::strong_count(&v) == 1 {
-                to_rem.push((*size, cmp::Reverse(*k)));
+                return Some((*size, cmp::Reverse(*k)));
+            } else {
+                None
             }
-        }
+        }));
+
+        debug_print!("Cache::evict to_rem made");
 
         let mut total_size = self.cached_bytes.load(Ordering::Relaxed);
 
@@ -87,26 +132,33 @@ where
             }
         }
 
+        debug_print!("Cache::evict ended");
+
         drop(cache);
     }
-    
-    pub fn evict_all_possible(&self) {
-        let mut cache = self.cache.write().unwrap();
 
-        let mut to_rem = Vec::new();
-        for (k, (size, v)) in cache.iter() {
+    pub fn evict_all_possible(&self) {
+        let mut cache = self.cache.write();
+
+        let to_rem = Vec::from_iter(cache.iter().flat_map(|(k, v)| {
+            let (size, v) = v.get()?;
+
             //This is thread-safe because we have a write-lock on the cache,
             //and since the Arc count is 1, the only reference is through the cache.
-            //once it decreases to 1, it can never increase until we release the 
+            //once it decreases to 1, it can never increase until we release the
             //write lock at the end of this function.
             if Arc::strong_count(&v) == 1 {
-                to_rem.push((*k, *size));
+                return Some((*k, *size));
+            } else {
+                None
             }
-        }
+        }));
 
         for (k, size) in to_rem {
             drop(cache.remove(&k));
             self.cached_bytes.fetch_sub(size, Ordering::Relaxed);
         }
+
+        drop(cache);
     }
 }

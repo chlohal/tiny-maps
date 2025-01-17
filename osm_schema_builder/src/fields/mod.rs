@@ -59,7 +59,7 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
         write_to,
         r##"
     impl minimal_storage::serialize_min::DeserializeFromMinimal for AnyOsmField {{
-        type ExternalData<'d> = (&'d mut minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<1, 16, u16>);
+        type ExternalData<'d> = (&'d minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<1, 16, u16>);
 
         fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
             let low_byte = (external_data.1.into_inner() & 0b1111_1111) as u8;
@@ -87,7 +87,7 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
         r##"
 
     impl minimal_storage::serialize_min::SerializeMinimal for AnyOsmField {{
-        type ExternalData<'s> = (&'s mut minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<1, 16, u16>);
+        type ExternalData<'s> = (&'s minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<1, 16, u16>);
         
         fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
             let head = external_data.1.into_inner();

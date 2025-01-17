@@ -6,6 +6,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
+use debug_logs::debug_print;
 use parking_lot::lock_api::RawRwLock;
 use parking_lot::{ArcRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -161,7 +162,7 @@ impl<const K: usize, File:Filelike> PageUse<K, File> {
                 .as_valid()
         };
 
-        self.freed_pages.push(free);
+        //todo!("make this thread safe") self.freed_pages.push(free);
 
         if let Some(prev) = previous_page {
             self.file
@@ -216,14 +217,24 @@ where
     pub fn new_page(&self, item: T) -> PageId<K> {
         let id = self.pageuse.lock().unwrap().alloc_new();
 
-        let page = Page {
-            pageuse: Arc::clone(&self.pageuse),
-            item: RwLock::new(item),
-            dirty: true.into(),
-            component_pages: vec![id],
-        };
+        debug_print!("PagedStorage::new_page calling");
 
-        self.cache.insert(id, page);
+        //this set will always `insert`, never `get`, 
+        //because the ID was just allocated.
+        //(even in the case of reallocated pages,
+        //    they'll never be added to the pool for reallocation
+        //    until they're evicted from the cache)
+        self.cache.get_or_insert(id, || {
+            debug_print!("PagedStorage::new_page cache get_or_insert cell entered");
+            
+            Page {
+
+                    pageuse: Arc::clone(&self.pageuse),
+                    item: RwLock::new(item),
+                    dirty: true.into(),
+                    component_pages: vec![id],
+                }
+        });
 
         id
     }
@@ -237,15 +248,9 @@ where
             return None;
         }
 
-        let cached = self.cache.get(page_id);
-
-        if let Some(cached) = cached {
-            return Some(cached);
-        }
-
-        let page = Page::open(&self.pageuse, page_id, deserialize_data).unwrap();
-
-        Some(self.cache.insert(*page_id, page))
+        Some(self.cache.get_or_insert(*page_id, || {
+            Page::open(&self.pageuse, page_id, deserialize_data).unwrap()
+        }))
     }
 
     pub fn flush(&self) {
@@ -385,23 +390,23 @@ where
                 .expect("no error when flushing buffer");
 
             let PageWriter {
-                added_pages, state, ..
+                added_pages: writer_added_pages, state, ..
             } = writer;
 
-            let freed_pages = match state {
+            let writer_freed_pages = match state {
                 WriterState::Begin { to_write }
                 | WriterState::WritingAllocated { to_write, .. } => Vec::from(to_write),
                 _ => vec![],
             };
 
-            debug_assert!(freed_pages.is_empty() || added_pages.is_empty());
+            debug_assert!(writer_freed_pages.is_empty() || writer_added_pages.is_empty());
 
-            let valid_written_len = self.component_pages.len() - freed_pages.len();
+            let valid_written_len = self.component_pages.len() - writer_freed_pages.len();
             self.component_pages.truncate(valid_written_len);
 
-            self.component_pages.extend_from_slice(&added_pages);
+            self.component_pages.extend_from_slice(&writer_added_pages);
 
-            for page_to_free in freed_pages {
+            for page_to_free in writer_freed_pages {
                 storage.free_page(page_to_free);
             }
         }

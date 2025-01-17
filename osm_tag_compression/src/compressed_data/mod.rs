@@ -1,3 +1,4 @@
+use debug_logs::debug_print;
 use node::{osm_node_to_compressed_node, serialize_node, NodeFields};
 use osm_value_atom::LiteralValue;
 use osmpbfreader::{NodeId, OsmId, OsmObj, Ref, RelationId, WayId};
@@ -70,8 +71,11 @@ impl CompressedOsmData {
             OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache)?,
             OsmObj::Relation(r) => osm_relation_to_compressed_node(r, bbox_cache)?,
         };
+        debug_print!("made compressed value");
 
         insert_bbox(&value.osm_id(), value.bbox().clone(), bbox_cache);
+
+        debug_print!("inserted bbox");
 
         Ok(value)
     }
@@ -115,6 +119,8 @@ fn insert_bbox<const C: usize>(
 ) {
     let inner = flattened_id(id);
 
+    debug_print!("ok surely this worked. it's just a math thing??");
+
     bbox_cache.insert(inner, bbox);
 }
 
@@ -130,7 +136,7 @@ impl DeserializeFromMinimal for CompressedOsmData {
 }
 
 impl SerializeMinimal for CompressedOsmData {
-    type ExternalData<'a> = &'a mut (Pool<Field>, Pool<LiteralValue>);
+    type ExternalData<'a> = &'a (Pool<Field>, Pool<LiteralValue>);
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
         &'a self,
@@ -163,7 +169,7 @@ pub struct UncompressedOsmData(Vec<u8>);
 impl UncompressedOsmData {
     pub fn new(
         data: &CompressedOsmData,
-        pool: &mut (Pool<Field>, Pool<LiteralValue>),
+        pool: &(Pool<Field>, Pool<LiteralValue>),
     ) -> Self {
         let mut blob = Vec::new();
         data.minimally_serialize(&mut blob, pool).unwrap();

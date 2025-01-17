@@ -6,7 +6,7 @@ edition = "2021"
 default-run = "main"
 
 [workspace]
-members = [ "btree_vec", "lru_cache", "lutmorton", "osm_structures","storage", "tree", "osm_tags_to_fields", "osm_schema_builder", "osm_value_atom", "osm_tag_compression"]
+members = [ "btree_vec", "lru_cache", "lutmorton", "osm_structures","storage", "tree", "osm_tags_to_fields", "osm_schema_builder", "osm_value_atom", "osm_tag_compression", "debug_logs"]
 
 
 [dependencies]
@@ -19,6 +19,8 @@ osm_value_atom = { path = "./osm_value_atom" }
 osm_tag_compression = { path = "./osm_tag_compression" }
 tree = { path = "./tree" }
 clap = { version = "4.5.11", features = ["derive"] }
+parking_lot = {version = "0.12.3" }
+debug_logs = { path = "./debug_logs" }
 
 [profile.dev]
 opt-level = 1

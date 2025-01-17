@@ -312,7 +312,7 @@ impl FieldData {
         }}
 
         impl minimal_storage::serialize_min::DeserializeFromMinimal for {name} {{
-            type ExternalData<'d> = (&'d mut minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<5, 8, u8>);
+            type ExternalData<'d> = (&'d minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<5, 8, u8>);
 
             fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
                 {deser_code}
@@ -320,7 +320,7 @@ impl FieldData {
         }}
 
         impl minimal_storage::serialize_min::SerializeMinimal for {name} {{
-            type ExternalData<'s> = (&'s mut minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<0, 3, u8>);
+            type ExternalData<'s> = (&'s minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<0, 3, u8>);
 
             fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
                 {ser_code}

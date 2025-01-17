@@ -1,6 +1,9 @@
 use std::{
-    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf, sync::Mutex, usize
+    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf, usize
 };
+
+use debug_logs::debug_print;
+use parking_lot::Mutex;
 
 use minimal_storage::{pooled_storage::Pool, serialize_fast::FastMinSerde};
 use osm_tag_compression::{compressed_data::{flattened_id, CompressedOsmData, UncompressedOsmData}, field::Field};
@@ -16,7 +19,7 @@ const CACHE_SATURATION: usize = 4_000;
 const DATA_SATURATION: usize = 8_000;
 
 pub struct Compressor {
-    values: Mutex<(Pool<Field>, Pool<LiteralValue>)>,
+    values: (Pool<Field>, Pool<LiteralValue>),
     pub cache_bboxes: StoredBinaryTree<CACHE_SATURATION, u64, BoundingBox<i32>>,
     pub geography: StoredTree<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>,
     queue_to_handle_at_end: Mutex<VecDeque<OsmObj>>,
@@ -45,30 +48,33 @@ impl Compressor {
         cache_bboxes.expand_to_depth(5);
 
         Compressor {
-            values: Mutex::new((
+            values: (
                 Pool::new(Box::new(lit_file)).unwrap(),
                 Pool::new(Box::new(val_file)).unwrap(),
-            )),
+            ),
             cache_bboxes,
             geography,
             queue_to_handle_at_end: Mutex::new(VecDeque::new()),
         }
     }
     pub fn write_element(&self, element: OsmObj) {
+        debug_print!("begin");
+
         let data = CompressedOsmData::make_from_obj(element, &self.cache_bboxes);
+
+        debug_print!("after make_from_obj");
 
         let data = match data {
             Ok(data) => data,
             Err(element) => {
-                self.queue_to_handle_at_end.lock().unwrap().push_back(element);
+                self.queue_to_handle_at_end.lock().push_back(element);
                 return;
             }
         };
 
         let bbox = data.bbox();
 
-        let mut values = self.values.lock().unwrap();
-        let data = UncompressedOsmData::new(&data, &mut values);
+        let data = UncompressedOsmData::new(&data, &self.values);
 
         self.geography.insert(bbox, data)
     }
@@ -77,7 +83,7 @@ impl Compressor {
         self.geography.flush().unwrap();
         self.cache_bboxes.flush().unwrap();
 
-        let values = self.values.get_mut().unwrap();
+        let values = &self.values;
         values.0.flush()?;
         values.1.flush()?;
 
@@ -85,30 +91,28 @@ impl Compressor {
     }
 
     pub fn attempt_retry_queue<'a>(&'a mut self) -> impl Iterator<Item = OsmObj> + 'a {
-        let mut len = usize::MAX;
-
         //try 5 times to reduce the size
         for attempt in 0..5 {
             println!("Attempt {attempt}/4 to reduce retry queue:");
             //keep going as long as the size reduces. if it stays the same,
             //then fall through to another of the 5 previous tries.
             loop {
-                len = self.queue_to_handle_at_end.lock().unwrap().len();
+                let len = self.queue_to_handle_at_end.lock().len();
 
                 println!("{len} items in retry queue...");
                 for _ in 0..len {
-                    let elem = self.queue_to_handle_at_end.lock().unwrap().pop_front().unwrap();
+                    let elem = self.queue_to_handle_at_end.lock().pop_front().unwrap();
 
                     self.write_element(elem);
                 }
 
-                if self.queue_to_handle_at_end.lock().unwrap().len() == len {
+                if self.queue_to_handle_at_end.lock().len() == len {
                     break;
                 }
             }
         }
 
-        self.queue_to_handle_at_end.get_mut().unwrap().drain(..)
+        self.queue_to_handle_at_end.get_mut().drain(..)
     }
 }
 

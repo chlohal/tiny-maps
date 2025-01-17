@@ -273,7 +273,7 @@ impl DeserializeFromMinimal for OsmAddress {
 }
 
 impl SerializeMinimal for OsmAddress {
-    type ExternalData<'a> = &'a mut Pool<LiteralValue>;
+    type ExternalData<'a> = &'a Pool<LiteralValue>;
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
         &'a self,

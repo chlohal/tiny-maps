@@ -1,12 +1,9 @@
 use std::{env, fs::File, io::Write, thread::ScopedJoinHandle};
 
 use clap::Parser;
-use minimal_storage::packed_string_serialization::is_final::IterIsFinal;
 use offline_tiny_maps::compressor::Compressor;
 
 use osmpbfreader::blobs::result_blob_into_iter;
-
-use rayon::prelude::*;
 
 const WRITE_EVERY_N_CHUNKS: usize = 16;
 
@@ -35,22 +32,22 @@ fn main() {
 
     loop {
         let completed: usize = rayon::scope(|scope| {
-            ((0..WRITE_EVERY_N_CHUNKS).flat_map(|_| {
+            (0..WRITE_EVERY_N_CHUNKS).flat_map(|_| {
                 let blob = blobs.next()?;
-                scope.spawn(|_t| {
+                scope.spawn(|_| {
                     let objs = result_blob_into_iter(blob);
 
                     for obj in objs {
                         if let Ok(obj) = obj {
-                            compressor.write_element(obj)
+
+                            compressor.write_element(obj);
                         }
                     }
                 });
                 Some(1)
-            }))
+            })
             .sum()
         });
-        dbg!(completed);
         blobs_done += completed;
 
         println!("{blobs_done}/{blob_count} chunks finished");

@@ -51,7 +51,7 @@ pub fn osm_way_to_compressed_node<const C: usize>(
 
 pub fn serialize_way<W: std::io::Write>(
     write_to: &mut W,
-    pools: &mut (Pool<Field>, Pool<LiteralValue>),
+    pools: &(Pool<Field>, Pool<LiteralValue>),
     id: &WayId,
     tags: &Fields,
     children: &Vec<u64>,

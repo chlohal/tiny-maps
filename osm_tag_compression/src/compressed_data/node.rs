@@ -20,7 +20,7 @@ pub fn osm_node_to_compressed_node(node: osmpbfreader::Node) -> CompressedOsmDat
 
 pub fn serialize_node<W: std::io::Write>(
     write_to: &mut W,
-    external_data: &mut (Pool<Field>, Pool<LiteralValue>),
+    external_data: &(Pool<Field>, Pool<LiteralValue>),
     id: &NodeId,
     tags: &NodeFields,
 ) -> Result<(), std::io::Error> {
@@ -64,7 +64,7 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
 
 fn write_node_with_uninlined_tags<W: std::io::Write>(
     write_to: &mut W,
-    (literals, values): &mut (Pool<Field>, Pool<LiteralValue>),
+    (literals, values): &(Pool<Field>, Pool<LiteralValue>),
     tags: &Fields,
 ) -> std::io::Result<()> {
     //header layout:

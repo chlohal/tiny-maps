@@ -269,6 +269,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "debug_logs"
+version = "0.1.0"
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -744,6 +748,7 @@ name = "minimal_storage"
 version = "0.1.0"
 dependencies = [
  "btree_vec",
+ "debug_logs",
  "lru_cache",
  "parking_lot",
  "sha2",
@@ -812,12 +817,14 @@ name = "offline-tiny-maps"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "debug_logs",
  "minimal_storage",
  "osm_structures",
  "osm_tag_compression",
  "osm_value_atom",
  "osmpbfreader",
  "par-map",
+ "parking_lot",
  "rayon",
  "tree",
 ]
@@ -895,6 +902,7 @@ dependencies = [
 name = "osm_tag_compression"
 version = "0.1.0"
 dependencies = [
+ "debug_logs",
  "minimal_storage",
  "osm_structures",
  "osm_tags_to_fields",
@@ -1513,6 +1521,7 @@ name = "tree"
 version = "0.1.0"
 dependencies = [
  "btree_vec",
+ "debug_logs",
  "lutmorton",
  "minimal_storage",
 ]

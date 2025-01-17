@@ -8,7 +8,7 @@ pub mod colour;
 #[inline]
 pub(self) fn insert_with_byte(
     value: &Option<LiteralValue>,
-    pool: &mut Pool<LiteralValue>,
+    pool: &Pool<LiteralValue>,
     extra_storage: &mut Vec<u8>,
     byte: &mut u8,
     byte_index: u8,

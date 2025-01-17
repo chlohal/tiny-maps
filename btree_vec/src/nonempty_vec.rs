@@ -1,5 +1,5 @@
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NonEmptyUnorderVec<T>(T, Vec<T>);
 
 impl<T> NonEmptyUnorderVec<T> {

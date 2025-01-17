@@ -15,3 +15,4 @@ btree_vec = { path = "../btree_vec" }
 parking_lot = {version = "0.12.3", features = ["arc_lock"] }
 zstd = { version = "0.13", optional = true }
 sha2 = "0.10.8"
+debug_logs = { path = "../debug_logs" }

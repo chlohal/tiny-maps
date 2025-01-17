@@ -339,11 +339,11 @@ fn make_deprecation_iteration_code<'a>(
 ) -> impl Iterator<Item = String> + 'a {
     deps.iter().enumerate().map(|(i,d)| {
         match d {
-            Deprecation::RenameKey { from, to } => format!("if tag.0 == {from:?} {{ tag.0 = {to:?}.into(); }}\n"),
+            Deprecation::RenameKey { from, to } => format!("if tag.0 == {from:?} {{ tag.0 = {to:?}.into(); return Some(vec![tag]); }}\n"),
             Deprecation::RemoveKey { key } => format!("if tag.0 == {key:?} {{ return Some(Vec::with_capacity(0)); }}\n"),
             Deprecation::RemoveKeyval { key, value } => format!("if tag.0 == {key:?} && tag.1 == {value:?} {{ return Some(Vec::with_capacity(0)); }}\n"),
-            Deprecation::RenameKeyval { from: (from_k, from_v), to: (to_k, to_v) } => format!("if tag.0 == {from_k:?} && tag.1 == {from_v:?} {{ tag.0 = {to_k:?}.into(); tag.1 = {to_v:?}.into(); }}\n"),
-            Deprecation::RenameValue { key, from, to } => format!("if tag.0 == {key:?} && tag.1 == {from:?} {{ tag.1 = {to:?}.into(); }}\n"),
+            Deprecation::RenameKeyval { from: (from_k, from_v), to: (to_k, to_v) } => format!("if tag.0 == {from_k:?} && tag.1 == {from_v:?} {{ tag.0 = {to_k:?}.into(); tag.1 = {to_v:?}.into(); return Some(vec![tag]); }}\n"),
+            Deprecation::RenameValue { key, from, to } => format!("if tag.0 == {key:?} && tag.1 == {from:?} {{ tag.1 = {to:?}.into(); return Some(vec![tag]); }}\n"),
             Deprecation::ExpandSingleToMultiple { from: (key, value), to } => format!("if tag.0 == {key:?} && tag.1 == {value:?} {{ return Some(vec![{}]);  }}\n", to.iter().map(|(k,v)| format!("({k:?}.into(), {v:?}.into()),") ).collect::<String>() ),
             Deprecation::StoreSingleAndExpandToMultiple { from_key, to_key, add } => format!("if tag.0 == {from_key:?} {{ return Some(vec![ ({to_key:?}.into(), tag.1), {} ]); }}\n", add.iter().map(|(k,v)| format!("({k:?}.into(), {v:?}.into()),") ).collect::<String>()),
             Deprecation::ArbitraryStateful { from, to, copy_value_fromto } => {

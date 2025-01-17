@@ -156,8 +156,8 @@ impl<T: SerializeMinimal> Pool<T> {
         })
     }
 
-    pub fn flush(&mut self) -> std::io::Result<()> {
-        self.inner.get_mut().destination.flush()
+    pub fn flush(&self) -> std::io::Result<()> {
+        self.inner.lock().destination.flush()
     }
 
     pub fn insert<'s>(&self, item: &'s T, ctx: T::ExternalData<'s>) -> std::io::Result<PooledId> {

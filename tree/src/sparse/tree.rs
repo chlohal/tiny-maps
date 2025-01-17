@@ -5,6 +5,7 @@ use std::{
 };
 
 use btree_vec::{BTreeVec, SeparateStateIteratable};
+use debug_logs::debug_print;
 
 use crate::{
     sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage},
@@ -94,12 +95,9 @@ where
                 let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
 
                 std::iter::from_fn(move || loop {
-                    let (iter_state_advance, (k, v)) =
-                        page_read.children.stateless_next(iter_state)?;
-
-                    iter_state = iter_state_advance;
+                    let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
                     return Some((k.to_owned(), v.to_owned()));
-                })
+                }).flat_map(|(k,vs)| vs.into_iter().map(move |v| (k.clone(),v)))
             })
     }
 
@@ -122,7 +120,7 @@ where
     /// in undefined behaviour.
     ///
     /// An empty iterator will currently panic for implementation reasons.
-    /// 
+    ///
     pub fn find_all_entries<'a, 'b: 'a>(
         &'a self,
         mut iter: impl Iterator<Item = &'b Key> + 'a,
@@ -130,34 +128,22 @@ where
         let mut query = iter.next().unwrap();
         let (Node { ref page_id, .. }, mut leaf_bbox) = self.root.search_leaf_for_key(query);
 
-        let mut page = self
-            .storage
-            .get(
-                &page_id,
-                (),
-            )
-            .unwrap();
+        let mut page = self.storage.get(&page_id, ()).unwrap();
 
         std::iter::from_fn(move || {
             loop {
                 if !query.is_contained_in(&leaf_bbox) {
-                    let (Node { ref page_id, ..}, bb) = self.root.search_leaf_for_key(query);
+                    let (Node { ref page_id, .. }, bb) = self.root.search_leaf_for_key(query);
                     leaf_bbox = bb;
 
-                    page = self
-                        .storage
-                        .get(
-                            &page_id,
-                            (),
-                        )
-                        .unwrap();
+                    page = self.storage.get(&page_id, ()).unwrap();
                 }
 
                 let page_lock = page.read();
                 let children = &page_lock.children;
 
                 let Some(column) = children.get(&query) else {
-                    //This query is inside the node's bounding box, but doesn't exist in the node. 
+                    //This query is inside the node's bounding box, but doesn't exist in the node.
                     //Move on to the next query
                     query = iter.next()?;
                     continue;
@@ -166,23 +152,31 @@ where
                 query = iter.next()?;
 
                 let value = column.front().to_owned();
-                return Some((query.to_owned(), value))
+                return Some((query.to_owned(), value));
             }
         })
     }
 
     pub fn insert(&self, k: Key, item: Value) {
+        debug_print!("begin insert()");
+
         let (leaf, structure_changed) = self
             .root
             .get_key_leaf_splitting_if_needed(&k, &self.storage);
 
+        debug_print!("got leaf");
+
         let page = self.storage.get(&leaf.page_id, ()).unwrap();
         let mut child = page.write();
+
+        debug_print!("got page");
 
         leaf.child_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         child.children.push(k, item);
+
+        debug_print!("pushed");
 
         drop(child);
         drop(page);
@@ -348,6 +342,7 @@ where
                 }
                 None => {
                     if tree.try_split_left_right(storage, &direction) {
+                        debug_print!("wow we split!");
                         structure_changed = true;
                         continue;
                     }
@@ -377,6 +372,8 @@ where
         storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         children: BTreeVec<Key, Value>,
     ) -> Self {
+        debug_print!("new_with_children called");
+
         Self {
             bbox: bbox.clone(),
             child_count: children.len().into(),
@@ -414,8 +411,12 @@ where
             return false;
         }
 
+        debug_print!("try_split_left_right starting, passed the first oncelock check");
+
         let page = storage.get(&self.page_id, ()).unwrap();
         let inner = page.read();
+
+        debug_print!("got page");
 
         if inner.children.len() >= NODE_SATURATION_POINT {
             drop(inner);
@@ -430,7 +431,11 @@ where
         storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
+        debug_print!("split_left_right_unchecked");
+
         self.left_right_split.get_or_init(|| {
+            debug_print!("made it to the inside of the cell init");
+
             let (left_bb, right_bb) = self.bbox.split_evenly_on_dimension(direction);
 
             let mut left_children = BTreeVec::new();
@@ -438,7 +443,11 @@ where
 
             let page = storage.get(&self.page_id, ()).unwrap();
 
+            debug_print!("got page");
+
             let mut inner = page.write();
+
+            debug_print!("got inner");
 
             let children = std::mem::take(&mut inner.children);
 
@@ -452,12 +461,16 @@ where
                 }
             }
 
+            debug_print!("made new splits");
+
             //Relaxed is appropriate because this code holds a write lock on the corresponding page, so it cannot be modified
             //by any other thread at the same time.
             self.child_count
                 .store(inner.children.len(), std::sync::atomic::Ordering::Relaxed);
 
             drop(inner);
+
+            debug_print!("dropped inner");
 
             (
                 Box::new(Node::new_with_children(left_bb, storage, left_children)),

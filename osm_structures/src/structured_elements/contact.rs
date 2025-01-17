@@ -176,7 +176,7 @@ impl DeserializeFromMinimal for OsmContactInfo {
 
 
 impl SerializeMinimal for OsmContactInfo {
-    type ExternalData<'a> = &'a mut Pool<LiteralValue>;
+    type ExternalData<'a> = &'a Pool<LiteralValue>;
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, pool: Self::ExternalData<'s>) -> std::io::Result<()> {
         let mut buf = Vec::new();

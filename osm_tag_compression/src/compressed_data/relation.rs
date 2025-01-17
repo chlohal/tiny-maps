@@ -36,7 +36,7 @@ pub fn osm_relation_to_compressed_node<const C: usize>(mut relation: Relation, b
 
 pub fn serialize_relation<W: std::io::Write>(
     write_to: &mut W,
-    pools: &mut (Pool<Field>, Pool<LiteralValue>),
+    pools: &(Pool<Field>, Pool<LiteralValue>),
     id: &RelationId,
     tags: &Fields,
     children: &Vec<Ref>

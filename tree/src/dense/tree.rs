@@ -2,7 +2,7 @@ use std::{
     fs::File,
     io::{Seek, Write},
     path::PathBuf,
-    sync::atomic::Ordering::SeqCst,
+    sync::atomic::Ordering::{Relaxed, SeqCst},
 };
 
 use btree_vec::{BTreeVec, SeparateStateIteratable};
@@ -62,10 +62,7 @@ where
     }
 
     pub fn flush<'s>(&'s mut self) -> std::io::Result<()> {
-        if self
-            .structure_dirty
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.structure_dirty.swap(false, Relaxed) {
             self.structure_file.rewind().unwrap();
 
             let mut buf = Vec::new();
@@ -93,21 +90,20 @@ where
                 let page_read = Page::read_arc(
                     &self
                         .storage
-                        .get(&node.page_id, (node.children_count.load(SeqCst), &bbox))
+                        .get(&node.page_id, (&node.children_count, &bbox))
                         .unwrap(),
                 );
 
                 let mut iter_state = page_read.children.begin_iteration();
 
                 std::iter::from_fn(move || loop {
-                    let (iter_state_advance, (k, v)) =
-                        page_read.children.stateless_next(iter_state)?;
-                    iter_state = iter_state_advance;
+                    let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
                     if Key::delta_from_parent_would_be_contained(&k, &bbox, &query) {
                         let k = Key::apply_delta_from_parent(&k, &bbox);
                         return Some((k, v.to_owned()));
                     }
                 })
+                .flat_map(|(k, v)| v.into_iter().map(move |v| (k, v)))
             })
     }
     pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
@@ -117,10 +113,7 @@ where
 
         let page = self
             .storage
-            .get(
-                &leaf.page_id,
-                (leaf.children_count.load(SeqCst), &leaf_bbox),
-            )
+            .get(&leaf.page_id, (&leaf.children_count, &leaf_bbox))
             .unwrap();
         let item = page.read().children.get(&delta)?.iter().next().cloned();
 
@@ -134,23 +127,21 @@ where
         let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
         let page = self
             .storage
-            .get(
-                &leaf.page_id,
-                (leaf.children_count.load(SeqCst), &leaf_bbox),
-            )
+            .get(&leaf.page_id, (&leaf.children_count, &leaf_bbox))
             .unwrap();
         let mut write_lock = page.write();
 
+        assert_eq!(
+            leaf.children_count.fetch_add(1, SeqCst),
+            write_lock.children.len()
+        );
+
         write_lock.children.push(interior_delta_bbox, item);
 
-        leaf.children_count
-            .fetch_add(1, std::sync::atomic::Ordering::Acquire);
-
-        //ensuring that the drop of the write_lock lock happens AFTER the children_count is updated
+        //ensuring that the drop of the write_lock lock happens AFTER the children count is updated
         drop(write_lock);
 
-        self.structure_dirty
-            .fetch_or(true, std::sync::atomic::Ordering::Relaxed);
+        self.structure_dirty.fetch_or(true, Relaxed);
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
@@ -381,9 +372,13 @@ where
             return false;
         }
 
-        let len = self
-            .children_count
-            .fetch_min(NODE_SATURATION_POINT, std::sync::atomic::Ordering::Relaxed);
+        //No consistency promises need to be upheld by `len`, since
+        //it's just a check to ensure that we don't split before we have to.
+        //If this causes any issues, it'd just be slightly more splitting than
+        //purely necessary. Only one thread can run
+        //`split_left_right_unchecked`'s init routine at a time, so
+        //there's no concern of races between children_count and splitting.
+        let len = self.children_count.load(Relaxed);
 
         if len > NODE_SATURATION_POINT {
             return self.split_left_right_unchecked(storage, direction);
@@ -403,10 +398,7 @@ where
             let mut right_children = BTreeVec::new();
 
             let page = storage
-                .get(
-                    &self.page_id,
-                    (self.children_count.load(SeqCst), &self.bbox),
-                )
+                .get(&self.page_id, (&self.children_count, &self.bbox))
                 .unwrap();
 
             let mut inner = page.write();

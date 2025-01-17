@@ -9,3 +9,4 @@ edition = "2021"
 minimal_storage = { path = "../storage" }
 lutmorton = { path = "../lutmorton" }
 btree_vec = { path = "../btree_vec" }
+debug_logs = { path = "../debug_logs" }

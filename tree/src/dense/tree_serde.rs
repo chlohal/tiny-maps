@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, sync::OnceLock};
+use std::{collections::VecDeque, path::PathBuf, sync::{atomic::AtomicUsize, OnceLock}};
 
 use btree_vec::BTreeVec;
 use minimal_storage::{
@@ -28,6 +28,8 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
+        self.children.len().minimally_serialize(write_to, ())?;
+
         let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
         for (bbox, child) in self.children.iter() {
             debug_assert!(*bbox >= last_bbox);
@@ -50,12 +52,17 @@ where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
-    type ExternalData<'d> = (usize, &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent);
+    type ExternalData<'d> = (&'d AtomicUsize, &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent);
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
         (child_len, bbox): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
+        let child_len = child_len.load(std::sync::atomic::Ordering::SeqCst);
+        let ser_child_len = usize::deserialize_minimal(from, ())?;
+
+        assert_eq!(ser_child_len, child_len);
+
         let mut last_bbox = Key::DeltaFromParent::zero();
 
         let children_sorted_deque = (0..child_len).map(|_| {

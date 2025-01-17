@@ -1,43 +1,190 @@
-use std::{cmp::Ordering, vec};
+use std::{
+    cmp::{self, Ordering}, collections::BTreeMap, mem::MaybeUninit, vec
+};
 
-use crate::nonempty_vec::NonEmptyUnorderVec;
+use crate::nonempty_vec::{self, NonEmptyUnorderVec};
+
+const MAX_ITEMS_FOR_INSERT: usize = 8;
 
 #[derive(Clone)]
 pub struct BTreeVec<K, V> {
-    itms: Vec<(K, NonEmptyUnorderVec<V>)>,
+    itms: BTreeVecRoot<K, V>,
     len: usize,
+}
+
+#[derive(Clone)]
+enum BTreeVecRoot<K, V> {
+    Empty,
+    Capacity(Vec<BTreeVecNode<K, V>>),
+    Node(BTreeVecNode<K, V>),
+}
+
+#[derive(Clone, Debug)]
+enum BTreeVecNode<K, V> {
+    Leaf((K, NonEmptyUnorderVec<V>)),
+    ChildList {
+        min: K,
+        max: K,
+        itms: Vec<BTreeVecNode<K, V>>,
+    },
 }
 
 impl<K, V> Default for BTreeVec<K, V> {
     fn default() -> Self {
         Self {
-            itms: Default::default(),
+            itms: BTreeVecRoot::Empty,
             len: 0,
         }
     }
 }
 
-impl<K: Ord + Clone, V> BTreeVec<K, V> {
+impl<K: Ord + Copy, V> BTreeVecNode<K, V> {
+    fn make_leaf_to_list_with_added(&mut self, key: K, value: V) {
+        let old = match self {
+            BTreeVecNode::Leaf(l) => l,
+            BTreeVecNode::ChildList { .. } => return,
+        };
+        //fine to cheat and zero this because we're going to overwrite `self` at the end of this block.
+        //we're not calling any functions or doing ANYTHING other than initiating 2 vecs, which are certified okay.
+        let old = unsafe { std::ptr::read(old) };
+        let old_key = old.0;
+
+        let (itms, min, max) = if key > old_key {
+            (
+                vec![
+                    BTreeVecNode::Leaf(old),
+                    BTreeVecNode::Leaf((key, NonEmptyUnorderVec::new(value))),
+                ],
+                old_key,
+                key,
+            )
+        } else {
+            (
+                vec![
+                    BTreeVecNode::Leaf((key, NonEmptyUnorderVec::new(value))),
+                    BTreeVecNode::Leaf(old),
+                ],
+                key,
+                old_key,
+            )
+        };
+
+        unsafe { std::ptr::write(self, BTreeVecNode::ChildList { min, max, itms }) }
+    }
+    pub fn push(&mut self, key: K, value: V) {
+        match self {
+            BTreeVecNode::Leaf(old) => {
+                if key == old.0 {
+                    return old.1.push(value);
+                }
+
+                self.make_leaf_to_list_with_added(key, value);
+            }
+            BTreeVecNode::ChildList { min, max, itms } => {
+                if key > *max {
+                    *max = key;
+                    return itms.push(BTreeVecNode::Leaf((key, NonEmptyUnorderVec::new(value))));
+                }
+
+                let index = Self::btree_search(itms, &key);
+
+                if key < *min {
+                    *min = key;
+                }
+
+                match index {
+                    Ok(i) => match &mut itms[i] {
+                        BTreeVecNode::Leaf(l) => l.1.push(value),
+                        child_list => child_list.push(key, value),
+                    },
+                    //it must be inserted at index i, displacing other items.
+                    //if the item that's already there is a leaf, then take it away and put a child list there.
+                    //if the item that's already there is a child list already, then if it's less than 8 items then we can just give up and
+                    // do an insert(). if it's a ton of items then split it up!
+                    Err(i) => {
+                        if itms.len() < MAX_ITEMS_FOR_INSERT {
+                            return itms.insert(
+                                i,
+                                BTreeVecNode::Leaf((key, NonEmptyUnorderVec::new(value))),
+                            );
+                        }
+
+                        match &mut itms[i] {
+                            l @ BTreeVecNode::Leaf(_) => l.make_leaf_to_list_with_added(key, value),
+                            child_list => child_list.push(key, value),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn get(&self, key: &K) -> Option<&NonEmptyUnorderVec<V>> {
+        let itms = match self {
+            BTreeVecNode::Leaf((k, v)) => {
+                if k == key {
+                    return Some(v);
+                } else {
+                    return None;
+                }
+            }
+            BTreeVecNode::ChildList { itms, .. } => itms,
+        };
+        let index = Self::btree_search(itms, &key).ok()?;
+
+        match self {
+            BTreeVecNode::Leaf(_) => unreachable!(),
+            BTreeVecNode::ChildList { itms, .. } => itms[index].get(key),
+        }
+    }
+
+    fn btree_search(itms: &Vec<BTreeVecNode<K, V>>, key: &K) -> Result<usize, usize> {
+        for (i, t) in itms.iter().enumerate() {
+            match t {
+                BTreeVecNode::Leaf((l_key, _)) => if key == l_key {
+                    return Ok(i)
+                } else if key < l_key {
+                    return Err(i);
+                },
+                BTreeVecNode::ChildList { min, max, .. } => if key < min {
+                    return Err(i);
+                } else if key < max {
+                    return Err(i);
+                },
+            }
+        }
+
+        return Err(itms.len());
+    }
+}
+
+impl<K: Ord + Copy, V> BTreeVec<K, V> {
     pub fn push(&mut self, key: K, value: V) {
         self.len += 1;
 
-        if self.itms.last().is_some_and(|x| key > x.0) {
-            self.itms.push((key, NonEmptyUnorderVec::new(value)));
-            return;
-        }
-
-        match self.btr_search_by(|x| x.cmp(&key)) {
-            Ok(insert_to) => self.itms[insert_to].1.push(value),
-            Err(insert_at) => self
-                .itms
-                .insert(insert_at, (key, NonEmptyUnorderVec::new(value))),
+        match &mut self.itms {
+            BTreeVecRoot::Empty => {
+                self.itms =
+                    BTreeVecRoot::Node(BTreeVecNode::Leaf((key, NonEmptyUnorderVec::new(value))));
+            }
+            BTreeVecRoot::Capacity(cvec) => {
+                cvec.push(BTreeVecNode::Leaf((key, NonEmptyUnorderVec::new(value))));
+                let cvec = std::mem::replace(cvec, Vec::with_capacity(0));
+                self.itms = BTreeVecRoot::Node(BTreeVecNode::ChildList {
+                    min: key,
+                    max: key,
+                    itms: cvec,
+                });
+            }
+            BTreeVecRoot::Node(n) => n.push(key, value),
         }
     }
 
     pub fn get<'a, 'b>(&'a self, key: &'b K) -> Option<&'a NonEmptyUnorderVec<V>> {
-        let f = self.itms.binary_search_by_key(&key, |x| &x.0).ok()?;
-
-        self.itms.get(f).map(|x| &x.1)
+        match &self.itms {
+            BTreeVecRoot::Capacity(_) | BTreeVecRoot::Empty => None,
+            BTreeVecRoot::Node(node) => node.get(key),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -46,34 +193,48 @@ impl<K: Ord + Clone, V> BTreeVec<K, V> {
 
     pub fn with_capacity(len: usize) -> Self {
         Self {
-            itms: Vec::with_capacity(len),
+            itms: BTreeVecRoot::Capacity(Vec::with_capacity(len)),
             len: 0,
         }
     }
 
     pub fn new() -> Self {
         Self {
-            itms: Vec::new(),
+            itms: BTreeVecRoot::Empty,
             len: 0,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.itms.is_empty()
+        self.len == 0
     }
 
-    pub fn iter<'a>(&'a self) -> Iter<'a, K, V> {
-        Iter {
-            inner: self.itms.iter(),
-            current_tail_iter: None,
-        }
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        let t = match &self.itms {
+            BTreeVecRoot::Capacity(_) | BTreeVecRoot::Empty => [].iter(),
+            BTreeVecRoot::Node(n) => match n {
+                leaf @ BTreeVecNode::Leaf(_) => std::slice::from_ref(leaf).iter(),
+                BTreeVecNode::ChildList { min, max, itms } => itms.iter(),
+            },
+        };
+
+        let mut node_iter = t;
+        let mut iterations = vec![];
+
+        std::iter::from_fn(move || loop {
+            let Some(node) = node_iter.next() else {
+                node_iter = iterations.pop()?;
+                continue;
+            };
+
+            match node {
+                BTreeVecNode::Leaf(l) => return Some(l),
+                BTreeVecNode::ChildList { itms, .. } => iterations.push(itms.iter()),
+            }
+        })
+        .flat_map(|(k, vs)| vs.iter().map(move |v| (k, v)))
     }
 
-    pub fn btr_search_by(&self, f: impl Fn(&K) -> Ordering) -> Result<usize, usize> {
-        let f = |x: &(K, NonEmptyUnorderVec<V>)| f(&x.0);
-
-        return self.itms.binary_search_by(f);
-    }
     pub unsafe fn from_sorted_iter_failable<E>(
         len: usize,
         iter: impl Iterator<Item = Result<(K, V), E>>,
@@ -82,28 +243,31 @@ impl<K: Ord + Clone, V> BTreeVec<K, V> {
 
         Ok(Self { len, itms })
     }
-
-    pub unsafe fn from_raw_parts(len: usize, itms: Vec<(K, NonEmptyUnorderVec<V>)>) -> Self {
-        Self { len, itms }
-    }
 }
 
-fn deduplicate<K: Eq, V, E>(
+fn deduplicate<K: Eq + Copy, V, E>(
     mut iter: impl Iterator<Item = Result<(K, V), E>>,
-) -> Result<Vec<(K, NonEmptyUnorderVec<V>)>, E> {
+) -> Result<BTreeVecRoot<K, V>, E> {
     let mut vec = Vec::with_capacity(iter.size_hint().1.unwrap_or_default());
 
     let Some(v) = iter.next() else {
-        return Ok(vec);
+        return Ok(BTreeVecRoot::Capacity(vec));
     };
     let (k, v) = v?;
+    let min_key = k;
     let mut old_key_value = (k, NonEmptyUnorderVec::new(v));
 
     loop {
         match iter.next() {
             None => {
-                vec.push(old_key_value);
-                return Ok(vec);
+                let max_key = old_key_value.0;
+                vec.push(BTreeVecNode::Leaf(old_key_value));
+
+                return Ok(BTreeVecRoot::Node(BTreeVecNode::ChildList {
+                    min: min_key,
+                    max: max_key,
+                    itms: vec,
+                }));
             }
             Some(trier) => {
                 let (new_key, new_value) = trier?;
@@ -114,7 +278,7 @@ fn deduplicate<K: Eq, V, E>(
                     let mut new_key_value = (new_key, NonEmptyUnorderVec::new(new_value));
                     std::mem::swap(&mut old_key_value, &mut new_key_value);
 
-                    vec.push(new_key_value);
+                    vec.push(BTreeVecNode::Leaf(new_key_value));
                 }
             }
         }
@@ -133,119 +297,115 @@ pub trait SeparateStateIteratable {
     /// If it is modified, then any type invariants will not be violated from continued iteration,
     /// but items may be skipped or yielded multiple times.
     fn begin_iteration(&self) -> Self::State;
-    fn stateless_next<'s>(&'s self, state: Self::State) -> Option<(Self::State, Self::Item<'s>)>;
+    fn stateless_next<'s>(&'s self, state: &mut Self::State) -> Option<Self::Item<'s>>;
 }
 
 impl<K: Ord + 'static, V: 'static> BTreeVec<K, V> {
-    pub fn begin_range(
-        &self,
-        start: K
-    ) -> <Self as SeparateStateIteratable>::State {
-        let start_col = match self.itms.binary_search_by_key(&&start, |x| &x.0) {
-            Ok(i) => i,
-            Err(i) => i,
-        };
-
-        (start_col, 0)
+    pub fn begin_range(&self, start: K) -> <Self as SeparateStateIteratable>::State {
+        todo!()
     }
 }
 
 impl<K: 'static, V: 'static> SeparateStateIteratable for BTreeVec<K, V> {
-    type State = (usize, usize);
+    type State = (bool, Vec<usize>);
 
-    type Item<'s> = (&'s K, &'s V);
+    type Item<'s> = (&'s K, &'s NonEmptyUnorderVec<V>);
 
     fn begin_iteration(&self) -> Self::State {
-        (0, 0)
+        (false, vec![0])
     }
 
-    fn stateless_next<'s>(&'s self, state: Self::State) -> Option<(Self::State, Self::Item<'s>)> {
-        let (mut r, mut c) = state;
-        loop {
-            let (key, column) = self.itms.get(r)?;
+    fn stateless_next<'s>(&'s self, state: &mut Self::State) -> Option<Self::Item<'s>> {
+        let (done, iterations) = state;
 
-            let Some(value) = column.get(c) else {
-                r += 1;
-                c = 0;
-                continue;
-            };
-
-            c += 1;
-
-            return Some(((r, c), (key, value)));
+        if *done {
+            return None;
         }
-    }
-}
+        let mut vec = match &self.itms {
+            BTreeVecRoot::Capacity(_) | BTreeVecRoot::Empty => return None,
+            BTreeVecRoot::Node(BTreeVecNode::Leaf((k, v))) => {
+                *done = true;
+                return Some((k, v));
+            }
+            BTreeVecRoot::Node(BTreeVecNode::ChildList { min, max, itms }) => itms,
+        };
 
-pub struct Iter<'a, K, V> {
-    inner: std::slice::Iter<'a, (K, NonEmptyUnorderVec<V>)>,
-    current_tail_iter: Option<(&'a K, crate::nonempty_vec::Iter<'a, V>)>,
-}
-
-impl<'a, K, V> Iterator for Iter<'a, K, V> {
-    type Item = (&'a K, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let current_tail_iter = match &mut self.current_tail_iter {
-                Some(t) => t,
-                None => {
-                    let (k, vs) = self.inner.next()?;
-                    self.current_tail_iter.insert((k, vs.iter()))
+            if iterations.is_empty() {
+                return None;
+            }
+            for i in 0..(iterations.len()) {
+                let index = iterations[i];
+                if index >= vec.len() {
+                    iterations.pop()?;
+                    break;
                 }
-            };
-
-            match current_tail_iter.1.next() {
-                Some(t) => return Some((current_tail_iter.0, t)),
-                None => {
-                    self.current_tail_iter = None;
+                iterations.last_mut().map(|x| *x += 1);
+                match &vec[index] {
+                    BTreeVecNode::Leaf((k, v)) => return Some((k, v)),
+                    BTreeVecNode::ChildList { itms, .. } => {
+                        iterations.push(0);
+                        vec = itms;
+                        break;
+                    }
                 }
             }
         }
     }
 }
 
-pub struct IntoIter<K: Clone, V> {
-    inner: vec::IntoIter<(K, NonEmptyUnorderVec<V>)>,
-    current: Option<(K, std::vec::IntoIter<V>)>,
+pub struct IntoIter<K: Copy, V> {
+    kv: Option<(K, nonempty_vec::IntoIter<V>)>,
+    inner: vec::IntoIter<BTreeVecNode<K, V>>,
+    outer_stack: Vec<vec::IntoIter<BTreeVecNode<K, V>>>,
 }
 
-impl<K: Clone, V> IntoIterator for BTreeVec<K, V> {
+impl<K: Copy, V> IntoIterator for BTreeVec<K, V> {
     type Item = (K, V);
 
     type IntoIter = IntoIter<K, V>;
 
     fn into_iter(self) -> Self::IntoIter {
+        let t = match self.itms {
+            BTreeVecRoot::Capacity(_) | BTreeVecRoot::Empty => Vec::with_capacity(0).into_iter(),
+            BTreeVecRoot::Node(n) => match n {
+                leaf @ BTreeVecNode::Leaf(_) => vec![leaf].into_iter(),
+                BTreeVecNode::ChildList { itms, .. } => itms.into_iter(),
+            },
+        };
+
+        let node_iter = t;
+        let iterations = vec![];
+
         IntoIter {
-            inner: self.itms.into_iter(),
-            current: None,
+            inner: node_iter,
+            outer_stack: iterations,
+            kv: None,
         }
     }
 }
 
-impl<K: Clone, V> Iterator for IntoIter<K, V> {
+impl<K: Copy, V> Iterator for IntoIter<K, V> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let (key, values) = match &mut self.current {
-                Some(t) => t,
-                None => {
-                    let (k, vs) = self.inner.next()?;
+            if let Some((k, vs)) = &mut self.kv {
+                let Some(v) = vs.next() else {
+                    self.kv = None;
+                    continue;
+                };
+                return Some((*k, v));
+            }
 
-                    let (front, iter) = vs.into_iter_with_front();
-                    self.current = Some((k.clone(), iter));
-
-                    return Some((k, front));
-                }
+            let Some(node) = self.inner.next() else {
+                self.inner = self.outer_stack.pop()?;
+                continue;
             };
 
-            match values.next() {
-                Some(t) => return Some((key.clone(), t)),
-                None => {
-                    self.current.take();
-                    continue;
-                }
+            match node {
+                BTreeVecNode::Leaf((k, vs)) => self.kv = Some((k, vs.into_iter())),
+                BTreeVecNode::ChildList { itms, .. } => self.outer_stack.push(itms.into_iter()),
             }
         }
     }
@@ -264,12 +424,13 @@ mod test {
         v.push(1, 10);
         v.push(8, 1);
         v.push(8, 3);
+        v.push(0, 3);
 
         let mut v_vec = v.into_iter().collect::<Vec<_>>();
         v_vec.sort();
 
         assert_eq!(
-            vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 1), (8, 3)],
+            vec![(0, 3), (1, 10), (2, 1), (2, 3), (2, 10), (8, 1), (8, 3)],
             v_vec
         )
     }
@@ -285,6 +446,30 @@ mod test {
         v.push(8, 1);
 
         let v_vec = v.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
+
+        assert_eq!(
+            vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 3), (8, 1)],
+            v_vec
+        )
+    }
+
+    #[test]
+    pub fn stateless_iter() {
+        let mut v = BTreeVec::new();
+        v.push(2, 1);
+        v.push(2, 3);
+        v.push(8, 3);
+        v.push(2, 10);
+        v.push(1, 10);
+        v.push(8, 1);
+
+        let mut v_vec = Vec::new();
+        let mut state = v.begin_iteration();
+        while let Some((k, vs)) = v.stateless_next(&mut state) {
+            for v in vs.iter() {
+                v_vec.push((*k, *v));
+            }
+        }
 
         assert_eq!(
             vec![(1, 10), (2, 1), (2, 3), (2, 10), (8, 3), (8, 1)],

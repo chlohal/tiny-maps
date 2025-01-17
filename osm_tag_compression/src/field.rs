@@ -19,7 +19,7 @@ impl<A: AsRef<str>, B: Into<LiteralValue>> From<(A, B)> for Field {
 }
 
 impl SerializeMinimal for Field {
-    type ExternalData<'a> = &'a mut Pool<LiteralValue>;
+    type ExternalData<'a> = &'a Pool<LiteralValue>;
 
     fn minimally_serialize<'a, 's: 'a, W: Write>(
         &'a self,
