@@ -3,7 +3,7 @@ use std::{env, fs::File, io::Write, path::Path};
 use osm_schema_builder::{deprecations::make_deprecations, fields::make_fields};
 
 fn main() {
-    println!("cargo::rerun-if-changed=id-tagging-schema/");
+    println!("cargo:rerun-if-changed=id-tagging-schema-data");
     println!("cargo:rerun-if-changed=build.rs");
 
     open_file("generated_osm_structs.rs")

@@ -1,22 +1,27 @@
 use std::{
     cmp::min,
-    io::{self, BufReader, BufWriter, Read, Seek, Write},
+    io::{self, BufReader, BufWriter, Read, Write},
     ops::DerefMut,
-    path::PathBuf,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, Mutex,
+    },
+    thread::panicking,
 };
 
 use debug_logs::debug_print;
 use parking_lot::lock_api::RawRwLock;
-use parking_lot::{ArcRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 const THOUSAND: usize = 1024;
 const PAGE_HEADER_SIZE: usize = 16;
 
-const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 3000;
+const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 30_000;
 
 use crate::{
-    cache::{Cache, SizeEstimate}, pooled_storage::Filelike, serialize_fast::MinimalSerdeFast
+    cache::{Cache, SizeEstimate},
+    pooled_storage::Filelike,
+    serialize_fast::MinimalSerdeFast,
 };
 
 use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
@@ -52,6 +57,78 @@ impl<const K: usize> SerializeMinimal for PageId<K> {
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
         <usize as MinimalSerdeFast>::fast_minimally_serialize(&self.0, write_to, external_data)
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct FastNullablePageId<const K: usize>(usize);
+
+impl<const K: usize> DeserializeFromMinimal for FastNullablePageId<K> {
+    type ExternalData<'d> = ();
+
+    #[inline]
+    fn deserialize_minimal<'a, 'd: 'a, R: Read>(
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        <usize as MinimalSerdeFast>::fast_deserialize_minimal(from, external_data)
+            .map(FastNullablePageId)
+    }
+
+    fn read_past<'a, 'd: 'a, R: Read>(
+        from: &'a mut R,
+        _external_data: Self::ExternalData<'d>,
+    ) -> std::io::Result<()> {
+        <usize as MinimalSerdeFast>::fast_seek_after(from)
+    }
+}
+
+impl<const K: usize> SerializeMinimal for FastNullablePageId<K> {
+    type ExternalData<'d> = ();
+
+    #[inline]
+    fn minimally_serialize<'a, 's: 'a, W: Write>(
+        &'a self,
+        write_to: &mut W,
+        external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        <usize as MinimalSerdeFast>::fast_minimally_serialize(&self.0, write_to, external_data)
+    }
+}
+
+impl<const K: usize> FastNullablePageId<K> {
+    pub fn none() -> Self {
+        Self(0)
+    }
+    #[inline]
+    pub fn new(data: PageId<K>) -> Self {
+        debug_assert_ne!(data.0, 0);
+        Self(data.0)
+    }
+    pub fn get(&self) -> Option<PageId<K>> {
+        let v = self.0;
+        if v == 0 {
+            return None;
+        } else {
+            return Some(PageId(v));
+        }
+    }
+}
+
+impl<const K: usize> From<Option<PageId<K>>> for FastNullablePageId<K> {
+    fn from(value: Option<PageId<K>>) -> Self {
+        match value {
+            Some(pageid) => FastNullablePageId(pageid.0),
+            None => FastNullablePageId(0),
+        }
+    }
+}
+
+impl<const K: usize> From<PageId<K>> for FastNullablePageId<K> {
+    #[inline]
+    fn from(value: PageId<K>) -> Self {
+        Self::new(value)
     }
 }
 
@@ -101,13 +178,13 @@ where
 }
 
 #[derive(Debug)]
-struct PageUse<const PAGE_SIZE_K: usize, File: Filelike > {
+struct PageUse<const PAGE_SIZE_K: usize, File: Filelike> {
     lowest_unallocated_id: usize,
     freed_pages: Vec<PageId<PAGE_SIZE_K>>,
     file: File,
 }
 
-impl<const K: usize, File:Filelike> PageUse<K, File> {
+impl<const K: usize, File: Filelike> PageUse<K, File> {
     pub fn alloc_new(&mut self) -> PageId<K> {
         if let Some(p) = self.freed_pages.pop() {
             return p;
@@ -162,7 +239,7 @@ impl<const K: usize, File:Filelike> PageUse<K, File> {
                 .as_valid()
         };
 
-        //todo!("make this thread safe") self.freed_pages.push(free);
+        self.freed_pages.push(free);
 
         if let Some(prev) = previous_page {
             self.file
@@ -219,21 +296,21 @@ where
 
         debug_print!("PagedStorage::new_page calling");
 
-        //this set will always `insert`, never `get`, 
+        //this set will always `insert`, never `get`,
         //because the ID was just allocated.
         //(even in the case of reallocated pages,
         //    they'll never be added to the pool for reallocation
         //    until they're evicted from the cache)
         self.cache.get_or_insert(id, || {
             debug_print!("PagedStorage::new_page cache get_or_insert cell entered");
-            
-            Page {
 
-                    pageuse: Arc::clone(&self.pageuse),
-                    item: RwLock::new(item),
-                    dirty: true.into(),
-                    component_pages: vec![id],
-                }
+            Page {
+                pageuse: Arc::clone(&self.pageuse),
+                item: RwLock::new(item),
+                dirty: true.into(),
+                freeable: false.into(),
+                component_pages: vec![id],
+            }
         });
 
         id
@@ -265,6 +342,7 @@ where
 {
     item: RwLock<T>,
     dirty: AtomicBool,
+    freeable: AtomicBool,
     component_pages: Vec<PageId<PAGE_SIZE_K>>,
 
     pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K, File>>>,
@@ -283,6 +361,13 @@ pub type PageRwLock<T> = RwLock<T>;
 pub type PageReadLock<'a, T> = RwLockReadGuard<'a, T>;
 pub type PageWriteLock<'a, T> = RwLockWriteGuard<'a, T>;
 pub struct PageArcReadLock<const K: usize, T, File: Filelike>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    rwlock: Arc<Page<K, T, File>>,
+}
+
+pub struct PageArcWriteLock<const K: usize, T, File: Filelike>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
@@ -314,6 +399,42 @@ where
     }
 }
 
+impl<const K: usize, T, File: Filelike> std::ops::Deref for PageArcWriteLock<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        //SAFETY: A PageArcWriteLock always holds an exclusive lock, and therefore a shared lock.
+        unsafe { &*self.rwlock.item.data_ptr() }
+    }
+}
+
+impl<const K: usize, T, File: Filelike> std::ops::DerefMut for PageArcWriteLock<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        //SAFETY: A PageArcWriteLock always holds an exclusive lock.
+        unsafe { &mut *self.rwlock.item.data_ptr() }
+    }
+}
+
+impl<const K: usize, T, File: Filelike> Drop for PageArcWriteLock<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: A PageArcWriteLock always holds an exclusive lock.
+        unsafe {
+            self.rwlock.item.force_unlock_write();
+        }
+    }
+}
+
 impl<const K: usize, T, File: Filelike> Page<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
@@ -334,10 +455,23 @@ where
         }
     }
 
-    pub fn write<'a>(&'a self) -> PageWriteLock<'a, T> {
-        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+    pub fn write_arc(self: &Arc<Self>) -> PageArcWriteLock<K, T, File> {
+        unsafe {
+            self.item.raw().lock_exclusive();
+            //safety: holds lock!
+            PageArcWriteLock {
+                rwlock: Arc::clone(self),
+            }
+        }
+    }
 
-        self.item.write()
+    pub fn write<'a>(&'a self) -> PageWriteLock<'a, T> {
+        let w = self.item.write();
+        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.freeable
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
+        w
     }
 
     fn open<'a>(
@@ -365,14 +499,33 @@ where
             pageuse: Arc::clone(pageuse),
             item: RwLock::new(item),
             dirty: false.into(),
+            freeable: false.into(),
             component_pages: reader.page_ids_acc,
         })
     }
 
-    fn flush<'a>(&mut self) -> std::io::Result<()> {
-        let mut storage = self.pageuse.lock().unwrap();
+    ///
+    /// Only call if all references to the Page's ID are inaccessible
+    /// If this is called, then the underlying data MUST NOT write anything
+    /// when serialized. If the underlying data does so, then the page will not
+    /// in fact be freed. If the Page's `write()` method (or any similar) are called before
+    /// the page is finished with, then the page will not in fact be freed.
+    ///
+    pub unsafe fn allow_free(&self) {
+        self.freeable
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
 
-        if self.dirty.load(std::sync::atomic::Ordering::Relaxed) {
+    ///
+    /// ONLY CALL if this Page is not currently accessible in the cache
+    /// Page may not be loaded from disk before this method has completed.
+    ///
+    unsafe fn flush<'a>(&mut self) -> std::io::Result<()> {
+        if *self.dirty.get_mut() {
+            let allowed_to_free_first_page = *self.freeable.get_mut();
+
+            let mut storage = self.pageuse.lock().unwrap();
+
             let mut writer = BufWriter::new(PageWriter {
                 storage: storage.deref_mut(),
                 added_pages: vec![],
@@ -390,12 +543,16 @@ where
                 .expect("no error when flushing buffer");
 
             let PageWriter {
-                added_pages: writer_added_pages, state, ..
+                added_pages: writer_added_pages,
+                state,
+                ..
             } = writer;
 
             let writer_freed_pages = match state {
-                WriterState::Begin { to_write }
-                | WriterState::WritingAllocated { to_write, .. } => Vec::from(to_write),
+                WriterState::Begin { to_write } => {
+                    Vec::from(&to_write[(if allowed_to_free_first_page { 0 } else { 1 })..])
+                }
+                WriterState::WritingAllocated { to_write, .. } => Vec::from(to_write),
                 _ => vec![],
             };
 
@@ -420,8 +577,11 @@ where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
     fn drop(&mut self) {
-        if let Err(e) = self.flush() {
-            eprintln!("{}", e);
+        //safety: this can be called because if a Page is being dropped, then
+        //it's out of the cache
+        let e = unsafe { self.flush() };
+        if !panicking() {
+            e.unwrap();
         }
     }
 }
@@ -554,7 +714,8 @@ fn slice_pop<'a, 'b, T>(slice: &'a mut &'b [T]) -> Option<&'b T> {
     Some(head)
 }
 
-struct PageReader<'a, const PAGE_SIZE_K: usize, const BUILD_COMPONENT_ID_LIST: bool, File: Filelike> {
+struct PageReader<'a, const PAGE_SIZE_K: usize, const BUILD_COMPONENT_ID_LIST: bool, File: Filelike>
+{
     file: &'a mut File,
     page_ids_acc: Vec<PageId<PAGE_SIZE_K>>,
     current_page_id: PageId<PAGE_SIZE_K>,

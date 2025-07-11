@@ -1,0 +1,15 @@
+[package]
+name = "viewer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tree = { path = "../tree" }
+winit = { version = "0.29", features = ["rwh_05"] }
+wgpu = "22.0"
+pollster = "0.3"
+minimal_storage = { path = "../storage" }
+osm_structures = { path = "../osm_structures" }
+osm_value_atom = { path = "../osm_value_atom" }
+osm_tag_compression = { path = "../osm_tag_compression" }
+vello = "0.4"

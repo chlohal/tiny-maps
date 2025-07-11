@@ -1,17 +1,17 @@
 use std::{
-    collections::VecDeque, fs::{create_dir_all, File}, io::{self, BufWriter}, path::PathBuf, usize
+    collections::VecDeque, fs::{create_dir_all, File}, io::{self}, path::PathBuf, usize
 };
 
 use debug_logs::debug_print;
 use parking_lot::Mutex;
 
-use minimal_storage::{pooled_storage::Pool, serialize_fast::FastMinSerde};
-use osm_tag_compression::{compressed_data::{flattened_id, CompressedOsmData, UncompressedOsmData}, field::Field};
+use minimal_storage::{pooled_storage::Pool};
+use osm_tag_compression::{compressed_data::{CompressedOsmData, UncompressedOsmData}, field::Field};
 use osm_value_atom::LiteralValue;
-use osmpbfreader::{OsmId, OsmObj};
+use osmpbfreader::{OsmObj};
 
 use tree::{
-    bbox::{BoundingBox, EARTH_BBOX}, open_tree_dense, open_tree_sparse, point_range::{DisregardWhenDeserializing, StoredBinaryTree}, StoredTree
+    bbox::{BoundingBox, EARTH_BBOX}, open_tree_dense, open_tree_sparse, point_range::StoredBinaryTree, StoredTree
 };
 
 
@@ -74,14 +74,16 @@ impl Compressor {
 
         let bbox = data.bbox();
 
+        debug_assert!(self.geography.root_bbox().contains(&bbox));
+
         let data = UncompressedOsmData::new(&data, &self.values);
 
         self.geography.insert(bbox, data)
     }
 
     pub fn flush_to_storage(&mut self) -> Result<(), io::Error> {
-        self.geography.flush().unwrap();
-        self.cache_bboxes.flush().unwrap();
+        self.geography.flush()?;
+        self.cache_bboxes.flush()?;
 
         let values = &self.values;
         values.0.flush()?;

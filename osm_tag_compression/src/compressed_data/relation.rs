@@ -53,7 +53,7 @@ pub fn serialize_relation<W: std::io::Write>(
     id.0.minimally_serialize(write_to, ())?;
 
     //and just chuck all the literals into the literal pool and then put em at the end.
-    let literals = &tags.0;
+    let Fields(literals) = &tags;
 
     literals.len().minimally_serialize(write_to, ())?;
     for literal in literals.iter() {

@@ -1,6 +1,30 @@
 {
   "key": "communication:",
   "label": "Communication Types",
-  "options": [],
+  "options": [
+  "mobile_phone",
+  "radio",
+  "microwave",
+  "lte",
+  "gsm",
+  "television",
+  "gsm-r",
+  "umts",
+  "amateur_radio:sota",
+  "mobile",
+  "mobile_phone:ran_sharing",
+  "4G",
+  "3G",
+  "amateur_radio:sota:points",
+  "5G",
+  "bos",
+  "satellite",
+  "2G",
+  "amateur_radio:pota",
+  "antenna",
+  "military",
+  "amateur_radio",
+  "amateur_radio:repeater:frequency_out"
+],
   "type": "multiCombo"
 }

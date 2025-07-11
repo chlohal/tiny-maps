@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use minimal_storage::{serialize_min::{ DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal }, varint::{ from_varint, ToVarint } };
+use minimal_storage::{serialize_min::{ DeserializeFromMinimal, MinimalSerializedSeek, ReadExtReadOne, SerializeMinimal }, varint::{ from_varint, ToVarint } };
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -167,5 +167,12 @@ impl SerializeMinimal for LiteralValue {
         buf[0] = header_byte;
         
         write_to.write_all(&buf)
+    }
+}
+
+impl MinimalSerializedSeek for LiteralValue {
+    fn seek_past<R: Read>(from: &mut R) -> std::io::Result<()> {
+        //todo: make this more optimal wrt seeking
+        Self::deserialize_minimal(from, ()).map(|_| ())
     }
 }

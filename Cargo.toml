@@ -6,7 +6,7 @@ edition = "2021"
 default-run = "main"
 
 [workspace]
-members = [ "btree_vec", "lru_cache", "lutmorton", "osm_structures","storage", "tree", "osm_tags_to_fields", "osm_schema_builder", "osm_value_atom", "osm_tag_compression", "debug_logs"]
+members = [ "btree_vec", "lru_cache", "lutmorton", "osm_structures","storage", "tree", "osm_tags_to_fields", "osm_schema_builder", "osm_value_atom", "osm_tag_compression", "debug_logs", "viewer"]
 
 
 [dependencies]

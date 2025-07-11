@@ -146,7 +146,7 @@ impl FieldData {
                     self.0.0.minimally_serialize(write_to, ())?;
                     self.0.1.minimally_serialize(write_to, ())?;
                     self.0.2.minimally_serialize(write_to, ())", 
-                r"Ok(Self((
+                r"let _ = external_data; Ok(Self((
                     u16::deserialize_minimal(from, ())?,
                     u8::deserialize_minimal(from, ())?,
                     u8::deserialize_minimal(from, ())?,
@@ -175,6 +175,7 @@ impl FieldData {
 
                     Ok(())
                 ", r"
+                let _ = external_data;
                 let len = usize::deserialize_minimal(from, ())?;
                 let mut v = Vec::with_capacity(len);
 
@@ -312,7 +313,7 @@ impl FieldData {
         }}
 
         impl minimal_storage::serialize_min::DeserializeFromMinimal for {name} {{
-            type ExternalData<'d> = (&'d minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<5, 8, u8>);
+            type ExternalData<'d> = (&'d minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<3, 8, u8>);
 
             fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
                 {deser_code}
@@ -688,7 +689,7 @@ fn generate_values_enum(root_key: &str, options: &[String]) -> String {
         },
         //larger: this can fit into one u8. we assert during build that there aren't more than 256 enum variants
         0..256 => {
-            ("external_data.into_inner().minimally_serialize(write_to, ())?; (*self as u8).minimally_serialize(write_to, ())", "Ok(unsafe { std::mem::transmute(u8::deserialize_minimal(from, ())?) })")
+            ("external_data.into_inner().minimally_serialize(write_to, ())?; (*self as u8).minimally_serialize(write_to, ())", "let _ = external_data; Ok(unsafe { std::mem::transmute(u8::deserialize_minimal(from, ())?) })")
         },
         _ => unreachable!()
     };
@@ -757,7 +758,7 @@ fn generate_selections_struct(_wrapper_struct: &str, root_key: &str, suffixes: &
     impl minimal_storage::serialize_min::DeserializeFromMinimal for {root_key}Selections {{
             type ExternalData<'d> = ();
 
-            fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
+            fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, _external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
                 {deser_code}
             }}
         }}
@@ -765,7 +766,7 @@ fn generate_selections_struct(_wrapper_struct: &str, root_key: &str, suffixes: &
         impl minimal_storage::serialize_min::SerializeMinimal for {root_key}Selections {{
             type ExternalData<'s> = ();
 
-            fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
+            fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(&'a self, write_to: &mut W, _external_data: Self::ExternalData<'s>) -> Result<(), std::io::Error> {{
                 {ser_code}
             }}
         }}

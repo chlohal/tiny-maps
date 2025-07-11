@@ -115,46 +115,57 @@ where
     /// This behaves exactly like mapping the provided sorted `iter` over `get()`,
     /// with optimiziations to avoid re-fetching pages from physical storage.
     ///
-    /// The iterator MUST be sorted as determined by the Ord trait for `Key::DeltaFromParent`
-    /// (from a given fixed Parent); otherwise, the return is unspecified, but will not result
-    /// in undefined behaviour.
+    /// The iterator MUST be sorted as determined by the Ord trait for `Key` ; otherwise, 
+    /// the return is unspecified, but will not result in undefined behaviour.
     ///
+    /// The returned iterator will NOT be sorted (except in certain trivial cases).
+    /// 
     /// An empty iterator will currently panic for implementation reasons.
     ///
-    pub fn find_all_entries<'a, 'b: 'a>(
+    pub fn get_all<'a>(
         &'a self,
-        mut iter: impl Iterator<Item = &'b Key> + 'a,
+        mut iter: impl Iterator<Item = Key> + 'a,
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
-        let mut query = iter.next().unwrap();
-        let (Node { ref page_id, .. }, mut leaf_bbox) = self.root.search_leaf_for_key(query);
 
+        return iter.filter_map(|x| {
+            let value = self.get(&x)?;
+            Some((x,value))
+        });
+
+        let mut query = iter.next().unwrap();
+        let (Node { ref page_id, .. }, _leaf_bbox) = self.root.search_leaf_for_key(&query);
+
+        let mut page_is_exact = true;
         let mut page = self.storage.get(&page_id, ()).unwrap();
 
         std::iter::from_fn(move || {
             loop {
-                if !query.is_contained_in(&leaf_bbox) {
-                    let (Node { ref page_id, .. }, bb) = self.root.search_leaf_for_key(query);
-                    leaf_bbox = bb;
-
-                    page = self.storage.get(&page_id, ()).unwrap();
-                }
-
                 let page_lock = page.read();
                 let children = &page_lock.children;
 
                 let Some(column) = children.get(&query) else {
-                    //This query is inside the node's bounding box, but doesn't exist in the node.
-                    //Move on to the next query
-                    query = iter.next()?;
-                    continue;
+                    if page_is_exact {
+                        //if it wasn't found using the exact correct page, then it wouldn't be anywhere else either.
+                        query = iter.next()?;
+                        page_is_exact = false;
+                        continue;
+                    } else {
+                        //if it wasn't found, but the page was inexact, then get the exact page and try again.
+                        drop(page_lock);
+                        page_is_exact = true;
+                        let (Node { ref page_id, .. }, _leaf_bbox) = self.root.search_leaf_for_key(&query);
+                        page = self.storage.get(&page_id, ()).unwrap();
+                        continue;
+                    }
                 };
 
                 query = iter.next()?;
+                page_is_exact = false;
 
                 let value = column.front().to_owned();
                 return Some((query.to_owned(), value));
             }
-        })
+        });
     }
 
     pub fn insert(&self, k: Key, item: Value) {

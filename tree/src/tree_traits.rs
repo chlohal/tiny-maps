@@ -38,6 +38,12 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
         Self::apply_delta_from_parent(delta, from).is_contained_in(container)
     }
 
+    /// Can be overriden if wished for speed, but must be equivalent
+    /// to `Self::apply_delta_from_parent(delta, parent).is_contained_in(parent)`.
+    fn delta_from_parent_would_overlap(delta: &Self::DeltaFromParent, from: &Self::Parent, container: &Self::Parent) -> bool {
+        Self::apply_delta_from_parent(delta, from).is_contained_in(container)
+    }
+
     fn smallest_key_in(parent: &Self::Parent) -> Self;
     fn largest_key_in(parent: &Self::Parent) -> Self;
 
@@ -89,18 +95,25 @@ pub trait Zero {
 }
 
 pub trait Average: Sized {
-    fn avg(a: Self, b: Self) -> Self;
+    fn avg(a: &Self, b: &Self) -> Self;
+}
+
+pub trait AbsDiff {
+    type Diff;
+    fn abs_diff(a: &Self, b: &Self) -> Self::Diff;
 }
 
 macro_rules! impl_num_traits {
     ($($typ:ident),*) => {
         $(
         impl Average for $typ {
-            fn avg(a: Self, b: Self) -> Self {
-                a / 2 + b / 2
+            #[inline]
+            fn avg(a: &Self, b: &Self) -> Self {
+                *a / 2 + *b / 2
             }
         }
         impl Zero for $typ {
+            #[inline]
             fn zero() -> Self {
                 0
             }
@@ -109,4 +122,42 @@ macro_rules! impl_num_traits {
     };
 }
 
+impl AbsDiff for i32 {
+    type Diff = u32;
+    #[inline]
+    fn abs_diff(a: &Self, b: &Self) -> Self::Diff {
+        a.abs_diff(*b)
+    }
+}
+
+macro_rules! impl_float_num_traits {
+    ($($typ:ident),*) => {
+        $(
+        impl Average for $typ {
+            #[inline]
+            fn avg(a: &Self, b: &Self) -> Self {
+                *a / 2. + *b / 2.
+            }
+        }
+        impl Zero for $typ {
+            #[inline]
+            fn zero() -> Self {
+                0.
+            }
+        }
+
+        impl AbsDiff for $typ {
+            type Diff = $typ;
+
+            #[inline]
+            fn abs_diff(a: &Self, b: &Self) -> Self {
+                (a - b).abs()
+            }
+        }
+    )*
+    };
+}
+
 impl_num_traits! {u8, i8, u16, i16, u32, i32, u64, i64, u128, i128}
+
+impl_float_num_traits! {f32, f64}

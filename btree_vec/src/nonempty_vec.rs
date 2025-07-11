@@ -1,8 +1,11 @@
 
 #[derive(Clone, Debug)]
-pub struct NonEmptyUnorderVec<T>(T, Vec<T>);
+pub struct NonEmptyUnorderVec<T>(pub(crate) T, pub(crate) Vec<T>);
 
 impl<T> NonEmptyUnorderVec<T> {
+    pub fn from_head_and_rest(value: T, rest: Vec<T>) -> Self {
+        Self(value, rest)
+    }
     pub fn new(value: T) -> Self {
         Self(value, Vec::with_capacity(0))
     }
@@ -32,6 +35,15 @@ impl<T> NonEmptyUnorderVec<T> {
     
     pub fn len(&self) -> usize {
         1 + self.1.len()
+    }
+}
+
+impl<T> FromIterator<T> for NonEmptyUnorderVec<T> {
+    fn from_iter<L: IntoIterator<Item = T>>(iter: L) -> Self {
+        let mut iter = iter.into_iter();
+        let first = iter.next().unwrap();
+        let rest = iter.collect();
+        NonEmptyUnorderVec(first, rest)
     }
 }
 

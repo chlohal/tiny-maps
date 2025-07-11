@@ -1,4 +1,9 @@
-use std::fmt::Debug;
+use std::{
+    cmp::{max, min},
+    convert::Infallible,
+    fmt::Debug,
+    ops::AddAssign,
+};
 
 use minimal_storage::{
     serialize_fast::MinimalSerdeFast,
@@ -6,18 +11,24 @@ use minimal_storage::{
     varint::{from_varint, FromVarint, ToVarint},
 };
 
+use crate::tree_traits::AbsDiff;
+
 use super::tree_traits::{Average, Dimension, MultidimensionalKey, MultidimensionalParent, Zero};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BoundingBox<T> {
+pub struct BoundingBox<T: PartialOrd> {
     x: T,
     y: T,
     x_end: T,
     y_end: T,
 }
 
-pub const EARTH_BBOX: BoundingBox<i32> =
-    BoundingBox::new(-1800000000, -900000000, 1800000000, 900000000);
+pub const EARTH_BBOX: BoundingBox<i32> = BoundingBox {
+    x: -1800000000,
+    y: -900000000,
+    x_end: 1800000000,
+    y_end: 900000000,
+};
 
 impl FromIterator<(i32, i32)> for BoundingBox<i32> {
     fn from_iter<I: IntoIterator<Item = (i32, i32)>>(iter: I) -> Self {
@@ -46,20 +57,67 @@ impl FromIterator<BoundingBox<i32>> for BoundingBox<i32> {
     }
 }
 
-impl<T> BoundingBox<T> {
-    pub const fn new(x: T, y: T, x_end: T, y_end: T) -> Self {
+impl<T: PartialOrd> BoundingBox<T> {
+    pub fn into<Other: PartialOrd + From<T>>(self) -> BoundingBox<Other> {
+        BoundingBox {
+            x: self.x.into(),
+            y: self.y.into(),
+            x_end: self.x_end.into(),
+            y_end: self.y_end.into(),
+        }
+    }
+
+    pub const unsafe fn new_const(x: T, y: T, x_end: T, y_end: T) -> Self {
         Self { x, y, x_end, y_end }
     }
+
+    pub fn new(x: T, y: T, x_end: T, y_end: T) -> Self {
+        debug_assert!(x <= x_end);
+        debug_assert!(y <= y_end);
+
+        Self { x, y, x_end, y_end }
+    }
+
+    #[inline]
     pub const fn x(&self) -> &T {
         &self.x
     }
 
+    #[inline]
     pub const fn y(&self) -> &T {
         &self.y
     }
+
+    #[inline]
+    pub const fn x_end(&self) -> &T {
+        &self.x_end
+    }
+
+    #[inline]
+    pub const fn y_end(&self) -> &T {
+        &self.y_end
+    }
+    
+    pub fn set_y(&mut self, y: T) {
+        debug_assert!(y <= self.y_end);
+        self.y = y;
+    }
+    pub fn set_y_end(&mut self, y_end: T) {
+        debug_assert!(y_end >= self.y);
+        self.y_end = y_end;
+    }
+
+    pub fn set_x(&mut self, x: T) {
+        debug_assert!(x <= self.x_end);
+        self.x = x;
+    }
+    pub fn set_x_end(&mut self, x_end: T) {
+        debug_assert!(x_end >= self.x);
+        self.x_end = x_end;
+    }
 }
 
-impl<T: PartialEq> BoundingBox<T> {
+impl<T: PartialOrd> BoundingBox<T> {
     fn is_point(&self) -> bool {
         self.x == self.x_end && self.y == self.y_end
     }
@@ -89,7 +147,7 @@ impl MinimalSerdeFast for BoundingBox<i32> {
             y_end: i32::fast_deserialize_minimal(from, external_data)?,
         })
     }
-    
+
     fn fast_seek_after<R: std::io::Read>(from: &mut R) -> std::io::Result<()> {
         i32::fast_seek_after(from)?;
         i32::fast_seek_after(from)?;
@@ -98,7 +156,7 @@ impl MinimalSerdeFast for BoundingBox<i32> {
     }
 }
 
-impl<T: ToVarint + PartialEq + Copy> SerializeMinimal for BoundingBox<T> {
+impl<T: ToVarint + PartialEq + Copy + PartialOrd> SerializeMinimal for BoundingBox<T> {
     type ExternalData<'s> = ();
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
@@ -126,7 +184,7 @@ impl<T: ToVarint + PartialEq + Copy> SerializeMinimal for BoundingBox<T> {
     }
 }
 
-impl<T: FromVarint + Copy> DeserializeFromMinimal for BoundingBox<T> {
+impl<T: FromVarint + Copy + PartialOrd> DeserializeFromMinimal for BoundingBox<T> {
     type ExternalData<'a> = ();
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
@@ -158,11 +216,111 @@ impl<T: FromVarint + Copy> DeserializeFromMinimal for BoundingBox<T> {
     }
 }
 
+impl<T: Average + PartialOrd> BoundingBox<T> {
+    pub fn center(&self) -> (T, T) {
+        let cx: T = Average::avg(&self.x, &self.x_end);
+        let cy: T = Average::avg(&self.y, &self.y_end);
+
+        (cx, cy)
+    }
+}
+
+impl<T: AbsDiff + PartialOrd> BoundingBox<T> {
+    pub fn width(&self) -> T::Diff {
+        T::abs_diff(&self.x, &self.x_end)
+    }
+
+    pub fn height(&self) -> T::Diff {
+        T::abs_diff(&self.y, &self.y_end)
+    }
+
+    pub fn size(&self) -> (T::Diff, T::Diff) {
+        (self.width(), self.height())
+    }
+}
+
+impl<T: AddAssign + Copy + PartialOrd> BoundingBox<T> {
+    pub fn shift_over(&mut self, dx: T, dy: T) {
+        self.x += dx;
+        self.x_end += dx;
+
+        self.y += dy;
+        self.y_end += dy;
+    }
+}
+
+impl<T: PartialOrd + Copy> BoundingBox<T> {
+    fn clip_point(&self, (point_x, point_y): (T, T)) -> (T, T) {
+        let clipped_x = if point_x < self.x {
+            self.x
+        } else if point_x > self.x_end {
+            self.x_end
+        } else {
+            point_x
+        };
+
+        let clipped_y = if point_y < self.y {
+            self.y
+        } else if point_y > self.y_end {
+            self.y_end
+        } else {
+            point_y
+        };
+
+        (clipped_x, clipped_y)
+    }
+}
+
+impl BoundingBox<f64> {
+    pub fn as_i32(&self) -> BoundingBox<i32> {
+        BoundingBox {
+            x: self.x as i32,
+            y: self.y as i32,
+            x_end: self.x_end as i32,
+            y_end: self.y_end as i32,
+        }
+    }
+    pub fn zoom(&mut self, zoom: f64, center: Option<(f64, f64)>) {
+        let center = center.unwrap_or_else(|| self.center());
+
+        let center = self.clip_point(center);
+
+        if zoom > 1. {
+            return;
+        }
+
+        self.x += zoom * (center.0 - self.x).abs();
+        self.x_end -= zoom * (center.0 - self.x_end).abs();
+
+        self.y += zoom * (center.1 - self.y).abs();
+        self.y_end -= zoom * (center.1 - self.y_end).abs();
+    }
+}
+
 impl BoundingBox<i32> {
+    pub fn union(mut itms: impl Iterator<Item = Self>) -> Option<Self> {
+        let bbox = itms.collect();
+
+        if bbox == BoundingBox::empty() {
+            return None;
+        } else {
+            return Some(bbox);
+        }
+
+        let mut bbox = itms.next()?;
+
+        for item in itms {
+            bbox.extend_with_point(item.x, item.y);
+            bbox.extend_with_point(item.x_end, item.y_end);
+        }
+
+        Some(bbox)
+    }
+
     pub fn split_on_axis(&self, direction: &LongLatSplitDirection) -> (Self, Self) {
         match direction {
             LongLatSplitDirection::Long => {
-                let y_split = Average::avg(self.y, self.y_end);
+                let y_split = Average::avg(&self.y, &self.y_end);
                 return (
                     BoundingBox {
                         y_end: y_split,
@@ -175,7 +333,7 @@ impl BoundingBox<i32> {
                 );
             }
             LongLatSplitDirection::Lat => {
-                let x_split = Average::avg(self.x, self.x_end);
+                let x_split = Average::avg(&self.x, &self.x_end);
 
                 return (
                     BoundingBox {
@@ -191,12 +349,19 @@ impl BoundingBox<i32> {
         }
     }
 
+    /// This function should be an inverse operation from DeltaBoundingBox::absolute()
+    /// `self` must be equal to or contained inside `parent`
     pub fn interior_delta(&self, parent: &Self) -> DeltaBoundingBox32 {
-        let x = self.x.abs_diff(parent.x);
-        let y = self.y.abs_diff(parent.y);
-
         let width = self.x.abs_diff(self.x_end);
         let height = self.y.abs_diff(self.y_end);
+
+        //the difference will ALWAYS be a non-negative number, and therefore `abs_diff`
+        // will give the same result as `self.x - parent.x` but without overflows.
+        // This follows from the fact that `self` is inside `parent`.
+        debug_assert!(self.x >= parent.x);
+        debug_assert!(self.y >= parent.y);
+        let x = self.x.abs_diff(parent.x);
+        let y = self.y.abs_diff(parent.y);
 
         let xy = lutmorton::morton(x, y);
 
@@ -243,7 +408,15 @@ impl BoundingBox<i32> {
         }
     }
 
-    fn extend_with_point(&mut self, x: i32, y: i32) {
+    pub fn extend_with_point(&mut self, x: i32, y: i32) {
+        if self.x == 0 && self.y == 0 && self.y_end == 0 && self.x_end == 0 {
+            self.x = x;
+            self.x_end = x;
+            self.y = y;
+            self.y_end = y;
+            return;
+        }
+
         if self.x > x {
             self.x = x;
         }
@@ -271,7 +444,7 @@ impl MultidimensionalParent<2> for BoundingBox<i32> {
     fn split_evenly_on_dimension(&self, dimension: &Self::DimensionEnum) -> (Self, Self) {
         self.split_on_axis(dimension)
     }
-    
+
     fn overlaps(&self, child: &Self) -> bool {
         self.overlaps(child)
     }
@@ -308,13 +481,23 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
     ) -> Self::DeltaFromParent {
         DeltaBoundingBox32::from_delta_friendly_offset(delta, initial)
     }
-    
+
     fn smallest_key_in(parent: &Self::Parent) -> Self {
-        BoundingBox { x: parent.x, y: parent.y, x_end: 0, y_end: 0 }
+        BoundingBox {
+            x: parent.x,
+            y: parent.y,
+            x_end: 0,
+            y_end: 0,
+        }
     }
-    
+
     fn largest_key_in(parent: &Self::Parent) -> Self {
-        BoundingBox { x: parent.x_end, y: parent.y_end, x_end: 0, y_end: 0 }
+        BoundingBox {
+            x: parent.x_end,
+            y: parent.y_end,
+            x_end: 0,
+            y_end: 0,
+        }
     }
 }
 
@@ -371,17 +554,22 @@ impl DeltaBoundingBox32 {
         }
     }
 
+    /// This function should be an inverse operation from BoundingBox::interior_delta()
     pub fn absolute(&self, parent: &BoundingBox<i32>) -> BoundingBox<i32> {
         let (x, y) = lutmorton::unmorton(self.xy);
 
-        let x = parent.y.checked_add_unsigned(x).unwrap();
+        let x = parent.x.checked_add_unsigned(x).unwrap();
         let y = parent.y.checked_add_unsigned(y).unwrap();
 
         BoundingBox {
             x,
             y,
-            x_end: x.checked_add_unsigned(self.width).unwrap(),
-            y_end: y.checked_add_unsigned(self.height).unwrap(),
+            x_end: x
+                .checked_add_unsigned(self.width)
+                .expect("Overflow in width addition"),
+            y_end: y
+                .checked_add_unsigned(self.height)
+                .expect("Overflow in height addition"),
         }
     }
 }

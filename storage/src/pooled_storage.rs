@@ -123,7 +123,7 @@ impl<T: DeserializeFromMinimal + MinimalSerializedSeek + Clone> Pool<T> {
     ) -> Result<std::io::Result<T>, (usize, T::ExternalData<'_>)> {
         //if LSB is unset, then it's inlined
         if (id & 1) == 0 {
-            let blob = id.to_le_bytes();
+            let blob = (id >> 1).to_le_bytes();
             return Ok(T::deserialize_minimal(&mut &blob[..], external_data));
         }
 

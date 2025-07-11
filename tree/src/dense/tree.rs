@@ -1,8 +1,13 @@
 use std::{
+    collections::VecDeque,
     fs::File,
     io::{Seek, Write},
     path::PathBuf,
-    sync::atomic::Ordering::{Relaxed, SeqCst},
+    sync::{
+        atomic::Ordering::{Relaxed, SeqCst},
+        Mutex, RwLock, RwLockReadGuard, TryLockError,
+    },
+    usize,
 };
 
 use btree_vec::{BTreeVec, SeparateStateIteratable};
@@ -43,7 +48,7 @@ where
             .unwrap();
 
         let root = if structure_file.metadata().unwrap().len() == 0 {
-            let node = Node::new(1, bbox.clone(), &mut storage);
+            let node = Node::new(1, bbox.clone());
 
             Root {
                 root_bbox: bbox,
@@ -85,53 +90,113 @@ where
         query: &'a Key::Parent,
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
         self.root
-            .search_all_nodes_touching_area(query)
+            .search_all_nodes_touching_area(query, usize::MAX)
+            .filter(|(node, _)| {
+                //might be slightly behind, but will obey eventual consistency
+                node.children_count.load(SeqCst) > 0
+            })
             .flat_map(move |(node, bbox)| {
+                let page_id = node.page_id.read().unwrap();
                 let page_read = Page::read_arc(
                     &self
                         .storage
-                        .get(&node.page_id, (&node.children_count, &bbox))
+                        .get(page_id.as_ref()?, (&node.children_count, &bbox))
                         .unwrap(),
                 );
 
+                drop(page_id);
+
                 let mut iter_state = page_read.children.begin_iteration();
 
-                std::iter::from_fn(move || loop {
-                    let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
-                    if Key::delta_from_parent_would_be_contained(&k, &bbox, &query) {
-                        let k = Key::apply_delta_from_parent(&k, &bbox);
-                        return Some((k, v.to_owned()));
-                    }
-                })
-                .flat_map(|(k, v)| v.into_iter().map(move |v| (k, v)))
+                Some(
+                    std::iter::from_fn(move || loop {
+                        let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
+                        if Key::delta_from_parent_would_be_contained(&k, &bbox, &query) {
+                            let k = Key::apply_delta_from_parent(&k, &bbox);
+                            return Some((k, v.to_owned()));
+                        }
+                    })
+                    .flat_map(|(k, v)| v.into_iter().map(move |v| (k, v))),
+                )
             })
+            .flatten()
     }
     pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
         let (leaf, leaf_bbox) = self.root.search_leaf_for_key(query);
 
         let delta = query.delta_from_parent(&leaf_bbox);
 
+        let page_id = leaf.page_id.read().unwrap();
         let page = self
             .storage
-            .get(&leaf.page_id, (&leaf.children_count, &leaf_bbox))
+            .get(page_id.as_ref()?, (&leaf.children_count, &leaf_bbox))
             .unwrap();
+        drop(page_id);
         let item = page.read().children.get(&delta)?.iter().next().cloned();
 
         item
+    }
+
+    pub fn root_bbox(&self) -> &Key::Parent {
+        &self.root.root_bbox
     }
 
     pub fn insert(&self, k: &Key, item: Value) {
         let (leaf, leaf_bbox, structure_changed) =
             self.root.get_key_leaf_splitting_if_needed(k, &self.storage);
 
-        let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
-        let page = self
-            .storage
-            .get(&leaf.page_id, (&leaf.children_count, &leaf_bbox))
-            .unwrap();
-        let mut write_lock = page.write();
+        //Sanity check: the key's leaf should include the key.
+        debug_assert!(k.is_contained_in(&leaf_bbox));
 
-        assert_eq!(
+        let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
+
+        let mut write_lock = 'pageret: loop {
+            'fastbranch: loop {
+                let readlock = leaf.page_id.try_read();
+                let page_id = match readlock {
+                    Ok(ref p) => match **p {
+                        Some(i) => i,
+                        None => {
+                            break 'fastbranch; //We need to set the page_id; break to acquiring exclusive write access
+                        }
+                    },
+                    Err(_) => {
+                        break 'fastbranch; //Don't bother retrying the try_read; just break to the slow option
+                    }
+                };
+                let page = self
+                    .storage
+                    .get(&page_id, (&leaf.children_count, &leaf_bbox))
+                    .unwrap();
+                let page_write_lock = Page::write_arc(&page);
+
+                drop(readlock);
+
+                break 'pageret page_write_lock;
+            }
+
+            //the slow branch! if we've gotten here, then either the `page_id` is poisoned, or there's write
+            //contention.
+            let mut writelock = leaf.page_id.write().unwrap();
+            let page_id = match *writelock {
+                Some(p) => p,
+                None => self.create_page_for_insert(),
+            };
+            let page = self
+                .storage
+                .get(&page_id, (&leaf.children_count, &leaf_bbox))
+                .unwrap();
+            *writelock = Some(page_id);
+
+            let page_write_lock = Page::write_arc(&page);
+            drop(writelock);
+            break 'pageret page_write_lock;
+        };
+
+        //assertion that the child count maintained outside of the page is the same as the
+        //child count inside of the page. This is the only place that `children_count`
+        //is increased, so no worries about associated issues!
+        debug_assert_eq!(
             leaf.children_count.fetch_add(1, SeqCst),
             write_lock.children.len()
         );
@@ -142,6 +207,12 @@ where
         drop(write_lock);
 
         self.structure_dirty.fetch_or(true, Relaxed);
+    }
+
+    fn create_page_for_insert(&self) -> PageId<PAGE_SIZE> {
+        self.storage.new_page(Inner {
+            children: BTreeVec::new(),
+        })
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
@@ -155,6 +226,46 @@ where
 }
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+    StoredTree<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT, Parent = Key>
+        + MultidimensionalParent<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+{
+    pub fn find_entries_touching_box<'a>(
+        &'a self,
+        query: &'a Key::Parent,
+        depth: usize,
+    ) -> impl Iterator<Item = (Key, Value)> + 'a {
+        self.root
+            .search_all_nodes_touching_area(query, depth)
+            .flat_map(move |(node, bbox)| {
+                let page_id = node.page_id.read().unwrap();
+                let page_read = Page::read_arc(
+                    &self
+                        .storage
+                        .get(page_id.as_ref()?, (&node.children_count, &bbox))
+                        .unwrap(),
+                );
+                drop(page_id);
+
+                let mut iter_state = page_read.children.begin_iteration();
+                Some(
+                    std::iter::from_fn(move || loop {
+                        let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
+                        let k = Key::apply_delta_from_parent(k, &bbox);
+                        if query.overlaps(&k) {
+                            return Some((k, v.to_owned()));
+                        }
+                    })
+                    .flat_map(|(k, v)| v.into_iter().map(move |v| (k, v))),
+                )
+            })
+            .flatten()
+    }
+}
+
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
     Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
@@ -163,16 +274,28 @@ where
     fn search_all_nodes_touching_area<'a>(
         &'a self,
         area: &'a Key::Parent,
+        max_depth: usize,
     ) -> impl Iterator<
         Item = (
-            &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            &'a Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
             Key::Parent,
         ),
     > + 'a {
-        let mut search_stack = vec![self.search_smallest_node_covering_area(area)];
+        dbg!(max_depth);
+        let mut search_stack = VecDeque::from([(
+            &self.node,
+            self.root_bbox.to_owned(),
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default(),
+            0,
+        )]);
 
-        std::iter::from_fn(move || {
-            let (parent, bbox, direction) = search_stack.pop()?;
+        std::iter::from_fn(move || loop {
+            let (parent, bbox, direction, mut depth) = search_stack.pop_front()?;
+
+            if depth > max_depth {
+                continue;
+            }
+            depth += 1;
 
             match &parent.left_right_split.get() {
                 Some((left, right)) => {
@@ -180,14 +303,25 @@ where
                         bbox.split_evenly_on_dimension(&direction);
 
                     if left_bbox_calculated.overlaps(&area) {
-                        search_stack.push((left, left_bbox_calculated, direction.next_axis()));
-                    } else if right_bbox_calculated.overlaps(&area) {
-                        search_stack.push((right, right_bbox_calculated, direction.next_axis()));
+                        search_stack.push_back((
+                            left,
+                            left_bbox_calculated,
+                            direction.next_axis(),
+                            depth,
+                        ));
+                    }
+                    if right_bbox_calculated.overlaps(&area) {
+                        search_stack.push_back((
+                            right,
+                            right_bbox_calculated,
+                            direction.next_axis(),
+                            depth,
+                        ));
                     }
                 }
                 None => {}
             }
-
+            dbg!(&search_stack.len());
             return Some((parent, bbox));
         })
     }
@@ -285,6 +419,12 @@ where
         let mut direction =
             <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
 
+        //The key should be contained in the root bbox: if not, then we have an issue
+        debug_assert!(
+            k.is_contained_in(&tree.bbox),
+            "Key should be inside root bounding box"
+        );
+
         let mut structure_changed = false;
 
         loop {
@@ -319,12 +459,15 @@ where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
-    pub(crate) fn new(
-        id: u64,
-        bbox: Key::Parent,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-    ) -> Self {
-        Self::new_with_children(id, bbox, storage, BTreeVec::new())
+    pub(crate) fn new(id: u64, bbox: Key::Parent) -> Self {
+        Self {
+            page_id: None.into(),
+            children_count: 0.into(),
+            bbox,
+            left_right_split: Default::default(),
+            __phantom: std::marker::PhantomData,
+            id,
+        }
     }
 
     pub(crate) fn new_with_children(
@@ -333,10 +476,14 @@ where
         storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         children: BTreeVec<Key::DeltaFromParent, Value>,
     ) -> Self {
+        if children.is_empty() {
+            return Self::new(id, bbox);
+        }
+
         let children_count = children.len().into();
         Self {
-            bbox: bbox.clone(),
-            page_id: storage.new_page(Inner { children }),
+            bbox,
+            page_id: Some(storage.new_page(Inner { children })).into(),
             children_count,
             left_right_split: Default::default(),
             id,
@@ -393,15 +540,25 @@ where
     ) -> bool {
         self.left_right_split.get_or_init(|| {
             let (left_bb, right_bb) = self.bbox.split_evenly_on_dimension(direction);
+            let (left_id, right_id) = split_id(self.id);
 
-            let mut left_children = BTreeVec::new();
-            let mut right_children = BTreeVec::new();
+            let page_id_lock = self.page_id.read().unwrap();
+            let Some(page_id) = page_id_lock.as_ref().copied() else {
+                return (
+                    Box::new(Node::new(left_id, left_bb)),
+                    Box::new(Node::new(right_id, right_bb)),
+                );
+            };
 
             let page = storage
-                .get(&self.page_id, (&self.children_count, &self.bbox))
+                .get(&page_id, (&self.children_count, &self.bbox))
                 .unwrap();
 
             let mut inner = page.write();
+            drop(page_id_lock);
+
+            let mut left_children = BTreeVec::new();
+            let mut right_children = BTreeVec::new();
 
             let children = std::mem::take(&mut inner.children);
 
@@ -417,12 +574,39 @@ where
                 }
             }
 
+            dbg!(inner.children.len());
             self.children_count.store(inner.children.len(), SeqCst);
+
+            if inner.children.len() == 0 {
+                let page_id_lock = self.page_id.try_write();
+                match page_id_lock {
+                    Ok(mut page_id_lock) => {
+                        //safety: an exclusive lock on the page represented by
+                        //the page ID is held by `inner`.
+                        //An exclusive lock is kept on the concept of changing the page ID by
+                        //this lock.
+                        //All code that observes the `page_id` is enforced to
+                        //not use it if it is nulled out.
+                        //Worst-case scenario is the reading code gets stale values, but
+                        //eventual consistency is maintained
+                        unsafe {
+                            *page_id_lock = None;
+                            page.allow_free();
+                        }
+                        //ensure dropping after work is done
+                        drop(page_id_lock);
+                    }
+                    //if some other thread is updating the page ID at the same time, then
+                    //conservatively don't free it.
+                    Err(TryLockError::WouldBlock) => {}
+                    lock @ Err(_) => {
+                        let _will_imediately_error = lock.unwrap();
+                    }
+                }
+            }
 
             //ensuring that the drop of the `inner` lock happens AFTER the children_count is updated
             drop(inner);
-
-            let (left_id, right_id) = split_id(self.id);
 
             (
                 Box::new(Node::new_with_children(

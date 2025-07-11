@@ -62,9 +62,10 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
         type ExternalData<'d> = (&'d minimal_storage::pooled_storage::Pool<osm_value_atom::LiteralValue>, minimal_storage::bit_sections::BitSection<1, 16, u16>);
 
         fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(from: &'a mut R, external_data: Self::ExternalData<'d>) -> Result<Self, std::io::Error> {{
-            let low_byte = (external_data.1.into_inner() & 0b1111_1111) as u8;
+            let low_byte = minimal_storage::bit_sections::BitSection::<3, 8, u8>::from((external_data.1.into_inner() & 0b1_1111) as u8);
+            let field_id = (external_data.1.into_inner() & 0b0111_1111_1110_0000) >> 5;
 
-            match 0b1111_1111_11 & (external_data.1.into_inner_masked() >> 5) {{
+            match field_id {{
             
             "##
     )?;
@@ -77,7 +78,7 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
         },
     ) in field_types.iter()
     {
-        write!(write_to, "crate::{fully_qualified_struct_name}::FIELD_ID => Ok(AnyOsmField::{enum_name}(crate::{fully_qualified_struct_name}::deserialize_minimal(from, (external_data.0, low_byte.into()))?)),\n")?
+        write!(write_to, "crate::{fully_qualified_struct_name}::FIELD_ID => Ok(AnyOsmField::{enum_name}(crate::{fully_qualified_struct_name}::deserialize_minimal(from, (external_data.0, low_byte.reduce_extent()))?)),\n")?
     }
 
     write!(write_to, " _ => unreachable!() }}}}}}")?;
@@ -175,7 +176,7 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
     };",
     )?;
 
-    for (_enum_name, fieldref) in multi_fields {
+    for (_enum_name, fieldref) in multi_fields.iter() {
         let varname = slugify(
             &fieldref.fully_qualified_struct_name,
             SlugificationMethod::RustIdent,
@@ -191,6 +192,20 @@ pub fn make_fields(write_to: &mut impl Write) -> std::io::Result<()> {
     write_to.write_all(b"Some((k,v))\n});\n\n")?;
 
     write_to.write_all(b"let tags: osmpbfreader::Tags = tags.collect();\n")?;
+
+    for (_enum_name, fieldref) in multi_fields.iter() {
+        let varname = slugify(
+            &fieldref.fully_qualified_struct_name,
+            SlugificationMethod::RustIdent,
+        );
+
+        write!(
+            write_to,
+            "if let Some(f) = crate::{}::end_state({varname}_state) {{ fields.push(f); }};\n",
+            fieldref.fully_qualified_struct_name
+        )?;
+    }
+
     write_to.write_all(b"(fields, tags)\n}")?;
 
     Ok(())

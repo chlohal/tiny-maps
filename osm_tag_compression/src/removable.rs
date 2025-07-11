@@ -1,4 +1,3 @@
-use osm_value_atom::LiteralValue;
 use osmpbfreader::Tags;
 
 

@@ -1,6 +1,5 @@
-use osm_structures::structured_elements::{address::OsmAddress, contact::OsmContactInfo};
 use osm_value_atom::LiteralValue;
-use osmpbfreader::{Node, NodeId, Tags};
+use osmpbfreader::NodeId;
 
 use crate::{field::Field, removable::remove_non_stored_tags};
 
@@ -13,7 +12,7 @@ use super::{CompressedOsmData, Fields};
 pub fn osm_node_to_compressed_node(node: osmpbfreader::Node) -> CompressedOsmData {
     let id = node.id;
     let tags = inline_node_tags(node.tags);
-    let point = BoundingBox::from_point(node.decimicro_lat, node.decimicro_lon);
+    let point = BoundingBox::from_point(node.decimicro_lon, node.decimicro_lat);
 
     CompressedOsmData::Node { id, tags, point }
 }
@@ -39,7 +38,7 @@ pub fn write_node_only_single_inlined_tags<W: std::io::Write>(
 
     //1: node
     //0: without any uninlined tags
-    //0: has exactly 1 parent.unwrap() (enables use of next 2 bits for niche-filling)
+    //0: has exactly 1 parent (enables use of next 2 bits for niche-filling)
     //00: start with no parents (represent 0,2,3,more. 0b00 -> 0, 0b01 -> 2; use 0b11 to indicate greater)
     //    if HasExactlyOneParent, then this controls the length (bytes) of the relative pointer to the parent
     //0: 0 if HasSingleInlinedTags. The 1 option would free up the next 3 bits, but isn't used for anything currently.

@@ -1,6 +1,11 @@
 use std::io::Write;
 
-use minimal_storage::{bit_sections::{BitSection, Byte}, pooled_storage::Pool, serialize_min::SerializeMinimal, varint::ToVarint};
+use minimal_storage::{
+    bit_sections::{BitSection, Byte},
+    pooled_storage::Pool,
+    serialize_min::{DeserializeFromMinimal, ReadExtReadOne, SerializeMinimal},
+    varint::ToVarint,
+};
 use osm_tags_to_fields::fields::AnyOsmField;
 use osm_value_atom::LiteralValue;
 
@@ -15,6 +20,35 @@ pub enum Field {
 impl<A: AsRef<str>, B: Into<LiteralValue>> From<(A, B)> for Field {
     fn from(value: (A, B)) -> Self {
         Field::Other(value.0.as_ref().into(), value.1.into())
+    }
+}
+
+impl DeserializeFromMinimal for Field {
+    type ExternalData<'d> = &'d mut Pool<LiteralValue>;
+
+    fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
+        from: &'a mut R,
+        pool: Self::ExternalData<'d>,
+    ) -> Result<Self, std::io::Error> {
+        let head = from.read_one()?;
+
+        let is_other = Byte::from(head).get_bit(0) == 0;
+
+        if is_other {
+            let k_id = u64::deserialize_minimal(from, ())?;
+            let v_id = u64::deserialize_minimal(from, ())?;
+
+            let k = pool.get(k_id, ())?.unwrap().into_owned();
+            let v = pool.get(v_id, ())?.unwrap().into_owned();
+
+            return Ok(Field::Other(k, v));
+        } else {
+            let head = u16::from_be_bytes([head, from.read_one()?]);
+
+            let head = BitSection::<1, 16, u16>::from(head);
+
+            return Ok(Field::Field(AnyOsmField::deserialize_minimal(from, (pool, head))?));
+        }
     }
 }
 
@@ -48,7 +82,7 @@ impl SerializeMinimal for Field {
 
                 let head = head.reduce_extent::<1, 16>();
 
-                return wk.minimally_serialize(write_to, (pool, head))
+                return wk.minimally_serialize(write_to, (pool, head));
             }
         }
     }

@@ -1,18 +1,26 @@
-use std::{collections::VecDeque, path::PathBuf, sync::{atomic::AtomicUsize, OnceLock}};
+use std::{
+    collections::VecDeque,
+    path::PathBuf,
+    sync::{atomic::AtomicUsize, Mutex, OnceLock, RwLock},
+};
 
 use btree_vec::BTreeVec;
 use minimal_storage::{
-    paged_storage::PageId,
+    paged_storage::{FastNullablePageId, PageId},
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
     varint::ToVarint,
     StorageReachable,
 };
 
 use crate::{
-    dense::{structure::Inner, tree::split_id},
+    dense::{
+        structure::{ExternalChildrenCount, Inner},
+        tree::split_id,
+    },
     tree_traits::{
         Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue, Zero,
     },
+    PAGE_SIZE,
 };
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
@@ -28,9 +36,16 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        self.children.len().minimally_serialize(write_to, ())?;
+        if self.children.len() == 0 {
+            return Ok(());
+        }
 
         let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
+
+        dbg!(self.children.len());
+
+        let mut actual_count = 0;
+
         for (bbox, child) in self.children.iter() {
             debug_assert!(*bbox >= last_bbox);
 
@@ -40,7 +55,10 @@ where
             child.minimally_serialize(write_to, external_data)?;
 
             last_bbox = bbox.to_owned();
+            actual_count += 1;
         }
+
+        dbg!(actual_count);
 
         Ok(())
     }
@@ -52,16 +70,21 @@ where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
-    type ExternalData<'d> = (&'d AtomicUsize, &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent);
+    type ExternalData<'d> = (
+        &'d PageId<{ PAGE_SIZE }>,
+        &'d ExternalChildrenCount<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        &'d <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent,
+    );
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
-        (child_len, bbox): Self::ExternalData<'d>,
+        (page_id_borrow, child_len, bbox): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        let child_len = child_len.load(std::sync::atomic::Ordering::SeqCst);
-        let ser_child_len = usize::deserialize_minimal(from, ())?;
+        //okay to load this lazily: since its being
+        //loaded currently it won't be modified until it's done loading
+        let child_len = child_len.get_initial(&page_id_borrow);
 
-        assert_eq!(ser_child_len, child_len);
+        dbg!(child_len);
 
         let mut last_bbox = Key::DeltaFromParent::zero();
 
@@ -150,9 +173,9 @@ where
         from: &'a mut R,
         (root_path, id, parent, direction): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        let has_split = u8::deserialize_minimal(from, ())? != 0;
-        let page_id = PageId::deserialize_minimal(from, ())?;
+        let page_id = FastNullablePageId::deserialize_minimal(from, ())?;
         let children_count = usize::deserialize_minimal(from, ())?.into();
+        let has_split = u8::deserialize_minimal(from, ())? != 0;
 
         let left_right_split = if has_split {
             let (left_id, right_id) = split_id(id);
@@ -176,7 +199,7 @@ where
 
         Ok(Self {
             bbox: parent,
-            page_id,
+            page_id: page_id.get().into(),
             children_count,
             left_right_split,
             id,
@@ -198,25 +221,26 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
+        let page_id = self.page_id.read().unwrap();
+        FastNullablePageId::from(page_id.as_ref().copied()).minimally_serialize(write_to, ())?;
+
+        self.children_count
+            .get_maybe_initial(&page_id)
+            .minimally_serialize(write_to, ())?;
+
         match &self.left_right_split.get() {
             Some((l, r)) => {
                 (1u8).minimally_serialize(write_to, ())?;
-                self.page_id.minimally_serialize(write_to, ())?;
-                self.children_count
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                    .minimally_serialize(write_to, ())?;
 
                 l.minimally_serialize(write_to, external_data)?;
                 r.minimally_serialize(write_to, external_data)?;
             }
             None => {
                 (0u8).minimally_serialize(write_to, ())?;
-                self.page_id.minimally_serialize(write_to, ())?;
-                self.children_count
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                    .minimally_serialize(write_to, ())?;
             }
         }
+
+        drop(page_id);
 
         Ok(())
     }

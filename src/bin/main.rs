@@ -1,11 +1,11 @@
-use std::{env, fs::File, io::Write, thread::ScopedJoinHandle};
+use std::{env, fs::File, io::Write};
 
 use clap::Parser;
 use offline_tiny_maps::compressor::Compressor;
 
 use osmpbfreader::blobs::result_blob_into_iter;
 
-const WRITE_EVERY_N_CHUNKS: usize = 16;
+const WRITE_EVERY_N_CHUNKS: usize = 1;
 
 fn main() {
     let args = Args::parse();

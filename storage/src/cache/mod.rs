@@ -121,19 +121,23 @@ where
         debug_print!("Cache::evict to_rem made");
 
         let mut total_size = self.cached_bytes.load(Ordering::Relaxed);
+        let target_size = self.max_bytes / 2;
 
         for (size, cmp::Reverse(k)) in to_rem {
             drop(cache.remove(&k));
             self.cached_bytes.fetch_sub(size, Ordering::AcqRel);
             total_size -= size;
 
-            if total_size < self.max_bytes {
+            if total_size < target_size {
                 break;
             }
         }
 
         debug_print!("Cache::evict ended");
-
+        
+        //Ensure that the cache's exclusive lock is dropped _after_ all of the removals happen. This means that
+        //no undefined behaviour will come from modifications during a cache's item being dropped OR from a
+        //slot being refilled while it is being emtied
         drop(cache);
     }
 

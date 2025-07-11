@@ -3,22 +3,20 @@ use node::{osm_node_to_compressed_node, serialize_node, NodeFields};
 use osm_value_atom::LiteralValue;
 use osmpbfreader::{NodeId, OsmId, OsmObj, Ref, RelationId, WayId};
 use relation::{osm_relation_to_compressed_node, serialize_relation};
-use way::{osm_way_to_compressed_node, serialize_way};
+use way::{deserialize_way, get_points, osm_way_to_compressed_node, serialize_way};
 
 use tree::{bbox::BoundingBox, point_range::StoredBinaryTree};
 
 use minimal_storage::{
-    pooled_storage::Pool, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{from_varint, ToVarint}
+    pooled_storage::Pool,
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    varint::{from_varint, ToVarint},
 };
 
 use crate::field::Field;
 
-
 #[derive(Clone, Debug)]
-pub struct Fields (Vec<Field>);
-
-const FIND_GROUP_MAX_DIFFERENCE: u64 = 8000;
-
+pub struct Fields(Vec<Field>);
 
 mod node;
 mod relation;
@@ -35,7 +33,7 @@ pub enum CompressedOsmData {
         bbox: BoundingBox<i32>,
         id: WayId,
         tags: Fields,
-        children: Vec<u64>,
+        children: Vec<(i32, i32)>,
     },
     Relation {
         bbox: BoundingBox<i32>,
@@ -100,8 +98,7 @@ pub fn flattened_id(osm_id: &OsmId) -> u64 {
 }
 
 pub fn unflattened_id(id: u64) -> OsmId {
-    let variant = (id >> 62);
-
+    let variant = id >> 62;
     let id = (id & !(0b11 << 62)) as i64;
 
     match variant {
@@ -125,13 +122,26 @@ fn insert_bbox<const C: usize>(
 }
 
 impl DeserializeFromMinimal for CompressedOsmData {
-    type ExternalData<'a> = &'a BoundingBox<i32>;
+    type ExternalData<'a> = (OsmObjectType, &'a BoundingBox<i32>, &'a mut Pool<LiteralValue>);
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
-        _from: &'a mut R,
-        _external_data: Self::ExternalData<'d>,
+        from: &'a mut R,
+        external_data: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        todo!()
+        match external_data.0 {
+            OsmObjectType::Node => todo!(),
+            OsmObjectType::Way => {
+                deserialize_way(from, external_data.1, external_data.2).map(|(id, children, tags)| {
+                    CompressedOsmData::Way {
+                        bbox: *external_data.1,
+                        id,
+                        tags: Fields(tags),
+                        children,
+                    }
+                })
+            }
+            OsmObjectType::Relation => todo!(),
+        }
     }
 }
 
@@ -149,10 +159,10 @@ impl SerializeMinimal for CompressedOsmData {
             }
             CompressedOsmData::Way {
                 id,
-                bbox: _,
+                bbox,
                 tags,
                 children,
-            } => serialize_way(write_to, external_data, id, tags, children),
+            } => serialize_way(write_to, &external_data.1, id, tags, children, bbox),
             CompressedOsmData::Relation {
                 bbox: _,
                 id,
@@ -162,19 +172,73 @@ impl SerializeMinimal for CompressedOsmData {
         }
     }
 }
-
 #[derive(Clone, Debug)]
 pub struct UncompressedOsmData(Vec<u8>);
 
+pub enum OsmObjectType {
+    Node,
+    Way,
+    Relation,
+}
+
 impl UncompressedOsmData {
-    pub fn new(
-        data: &CompressedOsmData,
-        pool: &(Pool<Field>, Pool<LiteralValue>),
-    ) -> Self {
+    pub fn new(data: &CompressedOsmData, pool: &(Pool<Field>, Pool<LiteralValue>)) -> Self {
         let mut blob = Vec::new();
         data.minimally_serialize(&mut blob, pool).unwrap();
 
         UncompressedOsmData(blob)
+    }
+    pub fn compress(self, bbox: &BoundingBox<i32>, pool: &mut Pool<LiteralValue>) -> std::io::Result<CompressedOsmData> {
+        let osm_type = self.determine_type().unwrap();
+        CompressedOsmData::deserialize_minimal(&mut &self.0[..], (osm_type, bbox, pool))
+    }
+    pub fn determine_type(&self) -> Option<OsmObjectType> {
+        let Some(first_byte) = self.0.get(0) else {
+            return None;
+        };
+
+        let first_bit = (*first_byte) >> 7;
+
+        if first_bit == 1 {
+            return Some(OsmObjectType::Node);
+        }
+
+        let second_bit = ((*first_byte) >> 6) & 1;
+
+        if second_bit == 1 {
+            return Some(OsmObjectType::Way);
+        } else {
+            return Some(OsmObjectType::Relation);
+        }
+    }
+    pub fn determine_is_node(&self) -> bool {
+        match self.determine_type() {
+            Some(OsmObjectType::Node) => true,
+            _ => false,
+        }
+    }
+
+    pub fn determine_is_way(&self) -> bool {
+        match self.determine_type() {
+            Some(OsmObjectType::Way) => true,
+            _ => false,
+        }
+    }
+    pub fn determine_is_relation(&self) -> bool {
+        match self.determine_type() {
+            Some(OsmObjectType::Relation) => true,
+            _ => false,
+        }
+    }
+
+    pub fn decompress_way_points(
+        &self,
+        bbox: &BoundingBox<i32>,
+    ) -> Option<std::io::Result<Vec<(i32, i32)>>> {
+        match self.determine_type() {
+            Some(OsmObjectType::Way) => Some(get_points(&mut &self.0[..], bbox)),
+            _ => None,
+        }
     }
 }
 
