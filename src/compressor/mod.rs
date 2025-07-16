@@ -65,7 +65,10 @@ impl Compressor {
         debug_print!("after make_from_obj");
 
         let data = match data {
-            Ok(data) => data,
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                return;
+            }
             Err(element) => {
                 self.queue_to_handle_at_end.lock().push_back(element);
                 return;

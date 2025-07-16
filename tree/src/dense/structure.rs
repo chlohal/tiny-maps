@@ -57,7 +57,7 @@ where
     pub(crate) node: Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
 }
 
-pub(crate) struct ExternalChildrenCount<
+pub struct ExternalChildrenCount<
     const DIMENSION_COUNT: usize,
     const NODE_SATURATION_POINT: usize,
     Key,
@@ -67,29 +67,47 @@ where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>;
 
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> From<usize>
+    for ExternalChildrenCount<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+    Value: MultidimensionalValue<Key>,
+{
+    fn from(value: usize) -> Self {
+        Self(value.into(), PhantomData, PhantomData)
+    }
+}
+
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
     ExternalChildrenCount<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: MultidimensionalKey<DIMENSION_COUNT>,
     Value: MultidimensionalValue<Key>,
 {
-    //Increments the current value, returning the previous value.
-    //Panics on overflow in non-optimized builds; otherwise overflows
-    pub fn increment(&self, _inner: &mut Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>) -> usize {
+    ///Increments the current value, returning the previous value.
+    /// Panics on overflow in non-optimized builds; otherwise overflows
+    pub fn increment(
+        &self,
+        _inner: &mut Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+    ) -> usize {
         let v = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         debug_assert_ne!(v, usize::MAX);
         v
     }
 
-    pub fn set(&self, _inner: &mut Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>, val: usize) {
+    pub fn set(
+        &self,
+        _inner: &mut Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        val: usize,
+    ) {
         self.0.store(val, std::sync::atomic::Ordering::SeqCst);
     }
 
-    pub fn get_initial(&self, _id: &PageId<{PAGE_SIZE}>) -> usize {
+    pub fn get_initial(&self, _id: &PageId<{ PAGE_SIZE }>) -> usize {
         self.0.load(std::sync::atomic::Ordering::SeqCst)
     }
-    pub fn get_maybe_initial(&self, id: &Option<PageId<{PAGE_SIZE}>>) -> usize {
-        if(id.is_none()) {
+    pub fn get_maybe_initial(&self, id: &Option<PageId<{ PAGE_SIZE }>>) -> usize {
+        if id.is_none() {
             return 0;
         } else {
             self.0.load(std::sync::atomic::Ordering::SeqCst)
@@ -107,7 +125,8 @@ where
     Value: MultidimensionalValue<Key>,
 {
     pub(super) page_id: RwLock<Option<PageId<{ PAGE_SIZE }>>>,
-    pub(super) children_count: ExternalChildrenCount<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+    pub(super) children_count:
+        ExternalChildrenCount<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
     pub(super) bbox: Key::Parent,
     pub(super) left_right_split: OnceLock<(
         Box<Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,

@@ -29,6 +29,7 @@ fn bingbong() {
         .get(
             &PageId::new(36),
             (
+                &PageId::new(36),
                 &2325.into(),
                 &BoundingBox::new(-650390625, 321679687, -648632812, 323437500),
             ),

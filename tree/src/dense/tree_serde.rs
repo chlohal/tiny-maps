@@ -42,8 +42,6 @@ where
 
         let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
 
-        dbg!(self.children.len());
-
         let mut actual_count = 0;
 
         for (bbox, child) in self.children.iter() {
@@ -57,8 +55,6 @@ where
             last_bbox = bbox.to_owned();
             actual_count += 1;
         }
-
-        dbg!(actual_count);
 
         Ok(())
     }
@@ -83,8 +79,6 @@ where
         //okay to load this lazily: since its being
         //loaded currently it won't be modified until it's done loading
         let child_len = child_len.get_initial(&page_id_borrow);
-
-        dbg!(child_len);
 
         let mut last_bbox = Key::DeltaFromParent::zero();
 

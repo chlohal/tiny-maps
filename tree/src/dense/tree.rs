@@ -38,7 +38,7 @@ where
             .write(true)
             .open(&folder.join("data"))
             .unwrap();
-        let mut storage = PagedStorage::open(storage_file);
+        let storage = PagedStorage::open(storage_file);
 
         let mut structure_file = File::options()
             .write(true)
@@ -91,17 +91,21 @@ where
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
         self.root
             .search_all_nodes_touching_area(query, usize::MAX)
-            .filter(|(node, _)| {
-                //might be slightly behind, but will obey eventual consistency
-                node.children_count.load(SeqCst) > 0
-            })
             .flat_map(move |(node, bbox)| {
                 let page_id = node.page_id.read().unwrap();
                 let page_read = Page::read_arc(
                     &self
                         .storage
-                        .get(page_id.as_ref()?, (&node.children_count, &bbox))
+                        .get(
+                            page_id.as_ref()?,
+                            (&*page_id.as_ref()?, &node.children_count, &bbox),
+                        )
                         .unwrap(),
+                );
+
+                debug_assert_eq!(
+                    page_read.children.len(),
+                    node.children_count.get(&page_read)
                 );
 
                 drop(page_id);
@@ -129,8 +133,15 @@ where
         let page_id = leaf.page_id.read().unwrap();
         let page = self
             .storage
-            .get(page_id.as_ref()?, (&leaf.children_count, &leaf_bbox))
+            .get(
+                page_id.as_ref()?,
+                (&*page_id.as_ref()?, &leaf.children_count, &leaf_bbox),
+            )
             .unwrap();
+        debug_assert_eq!(
+            page.read().children.len(),
+            leaf.children_count.get(&page.read())
+        );
         drop(page_id);
         let item = page.read().children.get(&delta)?.iter().next().cloned();
 
@@ -141,8 +152,62 @@ where
         &self.root.root_bbox
     }
 
+    fn insert_to_existing_page(
+        &self,
+        key: <Key as MultidimensionalKey<DIMENSION_COUNT>>::DeltaFromParent,
+        value: Value,
+        leaf: &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        leaf_bbox: <Key as MultidimensionalKey<DIMENSION_COUNT>>::Parent,
+    ) -> Result<
+        (),
+        (
+            Value,
+            <Key as MultidimensionalKey<DIMENSION_COUNT>>::DeltaFromParent,
+        ),
+    > {
+        let readlock = leaf.page_id.read().unwrap();
+
+        let page_id = match &*readlock {
+            Some(p) => p,
+            None => return Err((value, key)),
+        };
+
+        let page = self
+            .storage
+            .get(page_id, (page_id, &leaf.children_count, &leaf_bbox))
+            .unwrap();
+
+        let mut page_write = page.write();
+
+        leaf.children_count.increment(&mut *page_write);
+
+        page_write.children.push(key, value);
+
+        Ok(())
+    }
+
+    fn insert_to_new_page(
+        &self,
+        key: <Key as MultidimensionalKey<DIMENSION_COUNT>>::DeltaFromParent,
+        value: Value,
+        leaf: &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+    ) {
+        let mut page_id = leaf.page_id.write().unwrap();
+
+        debug_assert!(page_id.is_none());
+
+        let mut children = BTreeVec::new();
+        children.push(key, value);
+
+        let mut inner = Inner { children };
+
+        leaf.children_count.set(&mut inner, 1);
+
+        page_id.replace(self.storage.new_page(inner));
+    }
+
     pub fn insert(&self, k: &Key, item: Value) {
-        let (leaf, leaf_bbox, structure_changed) =
+        let (leaf, leaf_bbox, _structure_changed) =
             self.root.get_key_leaf_splitting_if_needed(k, &self.storage);
 
         //Sanity check: the key's leaf should include the key.
@@ -150,69 +215,15 @@ where
 
         let interior_delta_bbox = k.delta_from_parent(&leaf_bbox);
 
-        let mut write_lock = 'pageret: loop {
-            'fastbranch: loop {
-                let readlock = leaf.page_id.try_read();
-                let page_id = match readlock {
-                    Ok(ref p) => match **p {
-                        Some(i) => i,
-                        None => {
-                            break 'fastbranch; //We need to set the page_id; break to acquiring exclusive write access
-                        }
-                    },
-                    Err(_) => {
-                        break 'fastbranch; //Don't bother retrying the try_read; just break to the slow option
-                    }
-                };
-                let page = self
-                    .storage
-                    .get(&page_id, (&leaf.children_count, &leaf_bbox))
-                    .unwrap();
-                let page_write_lock = Page::write_arc(&page);
-
-                drop(readlock);
-
-                break 'pageret page_write_lock;
-            }
-
-            //the slow branch! if we've gotten here, then either the `page_id` is poisoned, or there's write
-            //contention.
-            let mut writelock = leaf.page_id.write().unwrap();
-            let page_id = match *writelock {
-                Some(p) => p,
-                None => self.create_page_for_insert(),
-            };
-            let page = self
-                .storage
-                .get(&page_id, (&leaf.children_count, &leaf_bbox))
-                .unwrap();
-            *writelock = Some(page_id);
-
-            let page_write_lock = Page::write_arc(&page);
-            drop(writelock);
-            break 'pageret page_write_lock;
+        let Err((item, interior_delta_bbox)) =
+            self.insert_to_existing_page(interior_delta_bbox, item, leaf, leaf_bbox)
+        else {
+            return;
         };
 
-        //assertion that the child count maintained outside of the page is the same as the
-        //child count inside of the page. This is the only place that `children_count`
-        //is increased, so no worries about associated issues!
-        debug_assert_eq!(
-            leaf.children_count.fetch_add(1, SeqCst),
-            write_lock.children.len()
-        );
-
-        write_lock.children.push(interior_delta_bbox, item);
-
-        //ensuring that the drop of the write_lock lock happens AFTER the children count is updated
-        drop(write_lock);
+        self.insert_to_new_page(interior_delta_bbox, item, leaf);
 
         self.structure_dirty.fetch_or(true, Relaxed);
-    }
-
-    fn create_page_for_insert(&self) -> PageId<PAGE_SIZE> {
-        self.storage.new_page(Inner {
-            children: BTreeVec::new(),
-        })
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
@@ -244,7 +255,10 @@ where
                 let page_read = Page::read_arc(
                     &self
                         .storage
-                        .get(page_id.as_ref()?, (&node.children_count, &bbox))
+                        .get(
+                            page_id.as_ref()?,
+                            (&*page_id.as_ref()?, &node.children_count, &bbox),
+                        )
                         .unwrap(),
                 );
                 drop(page_id);
@@ -281,7 +295,6 @@ where
             Key::Parent,
         ),
     > + 'a {
-        dbg!(max_depth);
         let mut search_stack = VecDeque::from([(
             &self.node,
             self.root_bbox.to_owned(),
@@ -321,7 +334,6 @@ where
                 }
                 None => {}
             }
-            dbg!(&search_stack.len());
             return Some((parent, bbox));
         })
     }
@@ -525,7 +537,9 @@ where
         //purely necessary. Only one thread can run
         //`split_left_right_unchecked`'s init routine at a time, so
         //there's no concern of races between children_count and splitting.
-        let len = self.children_count.load(Relaxed);
+        let len = self
+            .children_count
+            .get_maybe_initial(&*self.page_id.read().unwrap());
 
         if len > NODE_SATURATION_POINT {
             return self.split_left_right_unchecked(storage, direction);
@@ -551,7 +565,7 @@ where
             };
 
             let page = storage
-                .get(&page_id, (&self.children_count, &self.bbox))
+                .get(&page_id, (&page_id, &self.children_count, &self.bbox))
                 .unwrap();
 
             let mut inner = page.write();
@@ -574,8 +588,10 @@ where
                 }
             }
 
-            dbg!(inner.children.len());
-            self.children_count.store(inner.children.len(), SeqCst);
+            let len = inner.children.len();
+            self.children_count.set(&mut inner, len);
+
+            debug_assert_eq!(inner.children.len(), self.children_count.get(&inner));
 
             if inner.children.len() == 0 {
                 let page_id_lock = self.page_id.try_write();
@@ -604,6 +620,8 @@ where
                     }
                 }
             }
+
+            debug_assert_eq!(inner.children.len(), self.children_count.get(&inner));
 
             //ensuring that the drop of the `inner` lock happens AFTER the children_count is updated
             drop(inner);

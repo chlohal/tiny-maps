@@ -5,7 +5,7 @@ use offline_tiny_maps::compressor::Compressor;
 
 use osmpbfreader::blobs::result_blob_into_iter;
 
-const WRITE_EVERY_N_CHUNKS: usize = 1;
+const WRITE_EVERY_N_CHUNKS: usize = 16;
 
 fn main() {
     let args = Args::parse();

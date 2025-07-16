@@ -298,7 +298,7 @@ impl BoundingBox<f64> {
 }
 
 impl BoundingBox<i32> {
-    pub fn union(mut itms: impl Iterator<Item = Self>) -> Option<Self> {
+    pub fn union(itms: impl Iterator<Item = Self>) -> Option<Self> {
         let bbox = itms.collect();
 
         if bbox == BoundingBox::empty() {

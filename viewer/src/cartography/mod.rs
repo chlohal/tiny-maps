@@ -73,8 +73,11 @@ impl WindowState for State {
     }
 
     fn update(&mut self, rerender: &mut bool, event: &winit::event::WindowEvent, physical_size: &PhysicalSize<u32>) {
+        *rerender |= self.geo_objects.is_updated();
+
         match event {
             winit::event::WindowEvent::Resized(size) => {
+                self.geo_objects.resize_window(size.width, size.height);
             }
             winit::event::WindowEvent::CursorMoved {
                 device_id,
@@ -162,6 +165,8 @@ impl WindowState for State {
 
         drop(state);
 
+        let geo_fill_color = Color::from_rgb8(0xcc, 0xcc, 0xff);
+
         let stroke = Stroke::new((view_bbox.width() as f64) / (screen_size.width as f64) * 1.);
         let rect_stroke_color = Color::from_rgb8(0x00, 0x00, 0x00);
 
@@ -191,6 +196,8 @@ impl WindowState for State {
             if points.len() < 2 {
                 continue;
             }
+            let is_filled = false; //points.last() == points.first();
+
             let mut points = points.into_iter().map(|(x, y)| (x as f64, y as f64));
 
             path.move_to(points.next().unwrap());
@@ -205,6 +212,16 @@ impl WindowState for State {
                 Some(brush_transform),
                 &path,
             );
+
+            if is_filled {
+                scene.fill(
+                Fill::NonZero,
+                bbox_transform,
+                geo_fill_color,
+                Some(brush_transform),
+                &path,
+            );
+            }
         }
 
         let mut state = self.objects.lock().unwrap();
