@@ -28,6 +28,10 @@ where
         + BitOrAssign<T>
         + PartialEq
 {
+    pub fn new() -> Self {
+        T::default().into()
+    }
+
     pub fn get_bit(&self, index_from_left: usize) -> T {
         debug_assert!(index_from_left < Self::bit_count());
 
