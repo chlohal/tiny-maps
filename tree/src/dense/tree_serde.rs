@@ -36,6 +36,8 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
+        self.children.len().minimally_serialize(write_to, ())?;
+
         if self.children.len() == 0 {
             return Ok(());
         }
@@ -79,6 +81,10 @@ where
         //okay to load this lazily: since its being
         //loaded currently it won't be modified until it's done loading
         let child_len = child_len.get_initial(&page_id_borrow);
+
+        let child_len_check = usize::deserialize_minimal(from, ())?;
+
+        debug_assert_eq!(child_len, child_len_check);
 
         let mut last_bbox = Key::DeltaFromParent::zero();
 
