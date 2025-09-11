@@ -29,21 +29,21 @@ where
         + PartialEq
 {
     pub fn get_bit(&self, index_from_left: usize) -> T {
-        debug_assert!(index_from_left < Self::bits());
+        debug_assert!(index_from_left < Self::bit_count());
 
         let value = self.0 >> (std::mem::size_of::<T>() * 8 - index_from_left - 1);
 
         value & T::from(true)
     }
     pub fn set_bit(&mut self, index_from_left: usize, value: bool) {
-        debug_assert!(index_from_left < Self::bits());
+        debug_assert!(index_from_left < Self::bit_count());
 
         let mask = T::from(value) << (std::mem::size_of::<T>() * 8 - index_from_left - 1);
 
         self.0 |= mask;
     }
 
-    pub const fn bits() -> usize {
+    pub const fn bit_count() -> usize {
         END - START
     }
 
@@ -53,7 +53,7 @@ where
 
         let high_set = T::from(true) << ((std::mem::size_of::<T>() * 8) - 1);
 
-        while i != Self::bits() {
+        while i != Self::bit_count() {
             i += 1;
             mask >>= 1;
             mask |= high_set;
