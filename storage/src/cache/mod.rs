@@ -11,14 +11,10 @@ use parking_lot::{lock_api::RwLockWriteGuard, RwLock};
 
 use debug_logs::debug_print;
 
-pub trait SizeEstimate {
-    fn estimated_bytes(&self) -> usize;
-}
-
 #[derive(Debug)]
 pub struct Cache<Key, Value>
 where
-    Value: SizeEstimate,
+    Value: ?Sized,
     Key: Ord + Copy,
 {
     cache: Arc<RwLock<BTreeMap<Key, OnceLock<(usize, Arc<Value>)>>>>,
@@ -28,7 +24,7 @@ where
 
 impl<K, V> Cache<K, V>
 where
-    V: SizeEstimate,
+    V: ?Sized,
     K: Ord + Copy,
 {
     pub fn new(max_bytes: usize) -> Self {
@@ -39,7 +35,7 @@ where
         }
     }
 
-    pub fn get_or_insert(&self, id: K, f: impl FnOnce() -> V) -> Arc<V> {
+    pub fn get_or_insert(&self, id: K, f: impl FnOnce() -> (usize, Arc<V>)) -> Arc<V> {
 
         debug_print!("Cache::get_or_insert started");
 
@@ -68,11 +64,7 @@ where
         //then, fill it.
         let (cache_added_bytes, value) = cache.get(&id).unwrap().get_or_init(|| {
             //this closure can only be active in one thread at once, so no need to worry about multi-thread shenanigains
-            let value = f();
-            let value_size = value.estimated_bytes();
-            let value = Arc::new(value);
-
-            (value_size, value)
+            f()
         });
 
         let value = Arc::clone(value);

@@ -14,12 +14,12 @@ use parking_lot::lock_api::RawRwLock;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 const THOUSAND: usize = 1024;
-const PAGE_HEADER_SIZE: usize = 16;
+pub(super) const PAGE_HEADER_SIZE: usize = 16;
 
-const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 30_000;
+pub(super) const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 30_000;
 
 use crate::{
-    cache::{Cache, SizeEstimate},
+    cache::Cache,
     pooled_storage::Filelike,
     serialize_fast::MinimalSerdeFast,
 };
@@ -138,7 +138,7 @@ impl<const K: usize> PageId<K> {
         Self(inner)
     }
 
-    fn byte_offset(&self) -> u64 {
+    pub(super) fn byte_offset(&self) -> u64 {
         (self.0 * K * THOUSAND) as u64
     }
 
@@ -146,11 +146,11 @@ impl<const K: usize> PageId<K> {
         (self.0 * K * THOUSAND + PAGE_HEADER_SIZE) as u64
     }
 
-    fn end_byte_offset(&self) -> u64 {
+    pub(super) fn end_byte_offset(&self) -> u64 {
         ((self.0 + 1) * K * THOUSAND) as u64
     }
 
-    fn as_valid(self) -> Option<PageId<K>> {
+    pub(super) fn as_valid(self) -> Option<PageId<K>> {
         match self.0 {
             0 => None,
             i => Some(Self(i)),
@@ -158,12 +158,12 @@ impl<const K: usize> PageId<K> {
     }
 
     #[inline]
-    const fn data_size() -> usize {
+    pub(super) const fn data_size() -> usize {
         (K * THOUSAND) - PAGE_HEADER_SIZE
     }
 
     #[inline]
-    const fn byte_size() -> usize {
+    pub(super) const fn byte_size() -> usize {
         K * THOUSAND
     }
 }
@@ -178,10 +178,10 @@ where
 }
 
 #[derive(Debug)]
-struct PageUse<const PAGE_SIZE_K: usize, File: Filelike> {
-    lowest_unallocated_id: usize,
-    freed_pages: Vec<PageId<PAGE_SIZE_K>>,
-    file: File,
+pub(super) struct PageUse<const PAGE_SIZE_K: usize, File: Filelike> {
+    pub(super) lowest_unallocated_id: usize,
+    pub(super) freed_pages: Vec<PageId<PAGE_SIZE_K>>,
+    pub(super) file: File,
 }
 
 impl<const K: usize, File: Filelike> PageUse<K, File> {
@@ -304,13 +304,16 @@ where
         self.cache.get_or_insert(id, || {
             debug_print!("PagedStorage::new_page cache get_or_insert cell entered");
 
-            Page {
-                pageuse: Arc::clone(&self.pageuse),
-                item: RwLock::new(item),
-                dirty: true.into(),
-                freeable: false.into(),
-                component_pages: vec![id],
-            }
+            (
+                PageId::<K>::byte_size(),
+                Arc::new(Page {
+                    pageuse: Arc::clone(&self.pageuse),
+                    item: RwLock::new(item),
+                    dirty: true.into(),
+                    freeable: false.into(),
+                    component_pages: vec![id],
+                }),
+            )
         });
 
         id
@@ -326,7 +329,9 @@ where
         }
 
         Some(self.cache.get_or_insert(*page_id, || {
-            Page::open(&self.pageuse, page_id, deserialize_data).unwrap()
+            let p = Arc::new(Page::open(&self.pageuse, page_id, deserialize_data).unwrap());
+            let len = p.component_pages.len() * PageId::<K>::byte_size();
+            (len, p)
         }))
     }
 
@@ -335,25 +340,29 @@ where
     }
 }
 
-#[derive(Debug)]
 pub struct Page<const PAGE_SIZE_K: usize, T, File: Filelike>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    item: RwLock<T>,
-    dirty: AtomicBool,
-    freeable: AtomicBool,
-    component_pages: Vec<PageId<PAGE_SIZE_K>>,
+    pub(super) item: RwLock<T>,
+    pub(super) dirty: AtomicBool,
+    pub(super) freeable: AtomicBool,
+    pub(super) component_pages: Vec<PageId<PAGE_SIZE_K>>,
 
-    pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K, File>>>,
+    pub(super) pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K, File>>>,
 }
 
-impl<const K: usize, T, File: Filelike> SizeEstimate for Page<K, T, File>
+impl<const K: usize, T, File: Filelike> std::fmt::Debug for Page<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    fn estimated_bytes(&self) -> usize {
-        self.component_pages.len() * PageId::<K>::byte_size()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Page")
+            .field("dirty", &self.dirty)
+            .field("freeable", &self.freeable)
+            .field("component_pages", &self.component_pages)
+            .field("pageuse", &self.pageuse)
+            .finish()
     }
 }
 
@@ -474,7 +483,7 @@ where
         w
     }
 
-    fn open<'a>(
+    pub(super) fn open<'a>(
         pageuse: &Arc<Mutex<PageUse<K, File>>>,
         page_id: &PageId<K>,
         deserialize: <T as DeserializeFromMinimal>::ExternalData<'a>,
