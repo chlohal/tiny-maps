@@ -214,14 +214,21 @@ impl<
     }
 }
 
-pub trait StoragePage<T> {
+pub trait StoragePage<T: 'static> {
     fn get_mut(&mut self) -> &mut T;
 
-    fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a;
-    fn read_arc(self: &Arc<Self>) -> impl Deref<Target = T>;
+    type ReadRef<'a>: Deref<Target = T> + 'a where Self: 'a;
+    fn read<'a>(&'a self) -> Self::ReadRef<'a>;
 
-    fn write_arc(self: &Arc<Self>) -> impl DerefMut<Target = T>;
-    fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a;
+    type ReadArcRef: Deref<Target = T> + 'static;
+    fn read_arc<'a>(self: &'a Arc<Self>) -> Self::ReadArcRef;
+
+    
+    type WriteRef<'a>: DerefMut<Target = T> + 'a where Self: 'a;
+    fn write<'a>(&'a self) -> Self::WriteRef<'a>;
+    
+    type WriteArcRef: DerefMut<Target = T> + 'static;
+    fn write_arc(self: &Arc<Self>) -> Self::WriteArcRef;
 
     ///
     /// Only call if all references to the Page's ID are inaccessible
@@ -233,7 +240,7 @@ pub trait StoragePage<T> {
     unsafe fn allow_free(&self);
 }
 
-pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal> {
+pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static> {
     type PageId;
     type Page: StoragePage<Item>;
 

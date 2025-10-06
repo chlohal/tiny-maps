@@ -1,8 +1,7 @@
 use std::{fs::File, io::Write};
 
 use minimal_storage::{
-    paged_storage::{PageId, PagedStorage},
-    serialize_min::SerializeMinimal,
+    multitype_paged_storage::{StoragePage, StoreByPage}, paged_storage::{PageId, PagedStorage}, serialize_min::SerializeMinimal
 };
 use osm_tag_compression::compressed_data::{flattened_id, UncompressedOsmData};
 use tree::{

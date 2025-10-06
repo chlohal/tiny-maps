@@ -260,7 +260,8 @@ impl<const K: usize, File: Filelike> PageUse<K, File> {
     }
 }
 
-impl<'a, const K: usize, T: 'a, File: Filelike + 'a> StoreByPage<T> for PagedStorage<K, T, File>
+impl<const K: usize, T: 'static, File: Filelike + 'static> StoreByPage<T>
+    for PagedStorage<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
@@ -296,8 +297,8 @@ where
         id
     }
 
-    fn get<'a, 'b>(
-        &'a self,
+    fn get<'slf, 'b>(
+        &'slf self,
         page_id: &Self::PageId,
         deserialize_data: <T as DeserializeFromMinimal>::ExternalData<'b>,
     ) -> Option<Arc<Self::Page>> {
@@ -454,15 +455,26 @@ where
     }
 }
 
-impl<const K: usize, T, File: Filelike> StoragePage<T>
-    for Page<K, T, File>
+impl<const K: usize, T: 'static, File: Filelike + 'static> StoragePage<T> for Page<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a {
+    type ReadRef<'a> = RwLockReadGuard<'a, T>
+    where
+        Self: 'a;
+
+    type ReadArcRef = PageArcReadLock<K, T, File>;
+
+    type WriteRef<'a> = RwLockWriteGuard<'a, T>
+    where
+        Self: 'a;
+
+    type WriteArcRef = PageArcWriteLock<K, T, File>;
+
+    fn read<'a>(&'a self) -> Self::ReadRef<'a> {
         self.item.read()
     }
-    fn read_arc(self: &Arc<Self>) -> impl Deref<Target = T> {
+    fn read_arc(self: &Arc<Self>) -> Self::ReadArcRef {
         unsafe {
             self.item.raw().lock_shared();
             //safety: holds lock!
@@ -476,7 +488,7 @@ where
         self.item.get_mut()
     }
 
-    fn write_arc(self: &Arc<Self>) -> impl DerefMut<Target = T> {
+    fn write_arc(self: &Arc<Self>) -> Self::WriteArcRef {
         unsafe {
             self.item.raw().lock_exclusive();
             //safety: holds lock!
@@ -486,7 +498,7 @@ where
         }
     }
 
-    fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
+    fn write<'a>(&'a self) -> Self::WriteRef<'a> {
         let w = self.item.write();
         self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
         self.freeable

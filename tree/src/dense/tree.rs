@@ -21,7 +21,9 @@ use crate::tree_traits::{
     Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue,
 };
 use minimal_storage::{
-    multitype_paged_storage::{StoragePage, StoreByPage}, paged_storage::{Page, PageArcReadLock, PageId, PageReadLock, PageRwLock, PagedStorage}, serialize_min::{DeserializeFromMinimal, SerializeMinimal}
+    multitype_paged_storage::{StoragePage, StoreByPage},
+    paged_storage::{Page, PageArcReadLock, PageId, PageReadLock, PageRwLock, PagedStorage},
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
 };
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
@@ -251,15 +253,14 @@ where
             .search_all_nodes_touching_area(query, depth)
             .flat_map(move |(node, bbox)| {
                 let page_id = node.page_id.read().unwrap();
-                let page_read = Page::read_arc(
-                    &self
-                        .storage
-                        .get(
-                            page_id.as_ref()?,
-                            (&*page_id.as_ref()?, &node.children_count, &bbox),
-                        )
-                        .unwrap(),
-                );
+                let page = &self
+                    .storage
+                    .get(
+                        page_id.as_ref()?,
+                        (&*page_id.as_ref()?, &node.children_count, &bbox),
+                    )
+                    .unwrap();
+                let page_read = Page::read_arc(page);
                 drop(page_id);
 
                 let mut iter_state = page_read.children.begin_iteration();

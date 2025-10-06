@@ -93,33 +93,36 @@ where
         self.storage.flush();
         Ok(())
     }
-    pub fn find_items_in_box<'a>(
-        &'a self,
-        query: &'a Key::Parent,
-    ) -> impl Iterator<Item = Value> + 'a {
-        self.find_entries_in_box(query).map(|x| x.1)
-    }
+    // pub fn find_items_in_box<'a>(
+    //     &'a self,
+    //     query: &'a Key::Parent,
+    // ) -> impl Iterator<Item = Value> + 'a {
+    //     self.find_entries_in_box(query).map(|x| x.1)
+    // }
 
-    pub fn find_entries_in_box<'a>(
-        &self,
-        query: &'a Key::Parent,
-    ) -> impl Iterator<Item = (Key, Value)> + 'a {
-        let mut iterf = StoragePage::read_arc(&self.root).search_all_nodes_touching_area(query);
-        std::iter::from_fn(move || iterf.next()).flat_map(move |(node, _bbox)| {
-            let page_read = Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
+    // pub fn find_entries_in_box<'a, 's: 'a>(
+    //     &'s self,
+    //     query: &'a Key::Parent,
+    // ) -> impl Iterator<Item = (Key, Value)> + 'a {
+    //     let mut iterf = StoragePage::read_arc(&self.root).search_all_nodes_touching_area(query);
+    //     std::iter::from_fn(move || {
+    //         iterf.next()
+    //     }).flat_map(move |(node, _bbox)| {
+    //         let page_read = Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
 
-            let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
+    //         let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
 
-            std::iter::from_fn(move || loop {
-                let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
-                return Some((k.to_owned(), v.to_owned()));
-            })
-            .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
-        })
-    }
+    //         std::iter::from_fn(move || loop {
+    //             let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
+    //             return Some((k.to_owned(), v.to_owned()));
+    //         })
+    //         .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
+    //     })
+    // }
 
     pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
-        let (leaf, _leaf_bbox) = self.root.search_leaf_for_key(query);
+        let root = self.root.read();
+        let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
 
         let page = self.storage.get(&leaf.page_id, ()).unwrap();
 
