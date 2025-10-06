@@ -269,8 +269,10 @@ where
 
     type Page = Page<K, T, File>;
 
-    fn new_page(&self, item: T) -> Self::PageId {
+    fn new_page_with(&self, f: impl FnOnce() -> T) -> Self::PageId {
         let id = self.pageuse.lock().unwrap().alloc_new();
+
+        let item = f();
 
         debug_print!("PagedStorage::new_page calling");
 

@@ -89,8 +89,10 @@ impl<
 
     type Page = Page<K, T, File>;
 
-    fn new_page(&self, item: T) -> Self::PageId {
+    fn new_page_with(&self, f: impl FnOnce() -> T) -> Self::PageId {
         let id = self.pageuse.lock().unwrap().alloc_new();
+
+        let item = f();
 
         debug_print!("PagedStorage::new_page calling");
 
@@ -164,8 +166,9 @@ impl<
     type PageId = PageId<K>;
     type Page = Page<K, T, File>;
 
-    fn new_page(&self, item: T) -> PageId<K> {
+    fn new_page_with(&self, f: impl FnOnce() -> T) -> PageId<K> {
         let id = self.pageuse.lock().unwrap().alloc_new();
+        let item = f();
 
         //this set will always `insert`, never `get`,
         //because the ID was just allocated.
@@ -244,7 +247,10 @@ pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static>
     type PageId;
     type Page: StoragePage<Item>;
 
-    fn new_page(&self, item: Item) -> Self::PageId;
+    fn new_page_with(&self, f: impl FnOnce() -> Item) -> Self::PageId;
+    fn new_page(&self, item: Item) -> Self::PageId {
+        self.new_page_with(move || item)
+    }
     fn get<'a, 'b>(
         &'a self,
         page_id: &Self::PageId,

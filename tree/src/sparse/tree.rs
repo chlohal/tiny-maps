@@ -57,7 +57,7 @@ where
 
     pub fn new_with_rootpage_and_storage(
         bbox: Key::Parent,
-        mut storage: MultitypePagedStorage<{ PAGE_SIZE }>,
+        storage: MultitypePagedStorage<{ PAGE_SIZE }>,
         root_page_id: PageId<{ PAGE_SIZE }>,
     ) -> Self {
         let root_page = storage.get(&root_page_id, ());
@@ -65,18 +65,16 @@ where
         let root = match root_page {
             Some(r) => r,
             None => {
-                let node = Node::<{ DIMENSION_COUNT }, { NODE_SATURATION_POINT }, Key, Value>::new(
-                    bbox.clone(),
-                    &mut storage,
-                );
-
-                let actual_root_page_id = storage.new_page(Root {
-                    root_bbox: bbox,
-                    node,
+                let actual_root_page_id = storage.new_page_with(|| Root {
+                    root_bbox: bbox.clone(),
+                    node: Node::<{ DIMENSION_COUNT }, { NODE_SATURATION_POINT }, Key, Value>::new(
+                        bbox,
+                        &storage,
+                    ),
                 });
 
                 if root_page_id != actual_root_page_id {
-                    panic!("Manually specified root page does not match actual")
+                    panic!("Manually specified root page {root_page_id:?} does not match actual {actual_root_page_id:?}")
                 }
 
                 storage.get(&actual_root_page_id, ()).unwrap()
@@ -196,6 +194,7 @@ where
             root_read.get_key_leaf_splitting_if_needed(&k, &self.storage);
 
         debug_print!("got leaf");
+
 
         let page = self.storage.get(&leaf.page_id, ()).unwrap();
         let mut child = page.write();
@@ -459,7 +458,7 @@ where
         debug_print!("try_split_left_right starting, passed the first oncelock check");
 
         let page = storage.get(&self.page_id, ()).unwrap();
-        let inner = page.read();
+        let inner = page.read();        
 
         debug_print!("got page");
 
