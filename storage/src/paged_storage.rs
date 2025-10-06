@@ -1,7 +1,7 @@
 use std::{
     cmp::min,
     io::{self, BufReader, BufWriter, Read, Write},
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc, Mutex,
@@ -20,6 +20,7 @@ pub(super) const ALLOWED_CACHE_PHYSICAL_PAGES: usize = 30_000;
 
 use crate::{
     cache::Cache,
+    multitype_paged_storage::{StoragePage, StoreByPage},
     pooled_storage::Filelike,
     serialize_fast::MinimalSerdeFast,
 };
@@ -259,6 +260,63 @@ impl<const K: usize, File: Filelike> PageUse<K, File> {
     }
 }
 
+impl<'a, const K: usize, T: 'a, File: Filelike + 'a> StoreByPage<T> for PagedStorage<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
+    type PageId = PageId<K>;
+
+    type Page = Page<K, T, File>;
+
+    fn new_page(&self, item: T) -> Self::PageId {
+        let id = self.pageuse.lock().unwrap().alloc_new();
+
+        debug_print!("PagedStorage::new_page calling");
+
+        //this set will always `insert`, never `get`,
+        //because the ID was just allocated.
+        //(even in the case of reallocated pages,
+        //    they'll never be added to the pool for reallocation
+        //    until they're evicted from the cache)
+        self.cache.get_or_insert(id, || {
+            debug_print!("PagedStorage::new_page cache get_or_insert cell entered");
+
+            (
+                PageId::<K>::byte_size(),
+                Arc::new(Page {
+                    pageuse: Arc::clone(&self.pageuse),
+                    item: RwLock::new(item),
+                    dirty: true.into(),
+                    freeable: false.into(),
+                    component_pages: vec![id],
+                }),
+            )
+        });
+
+        id
+    }
+
+    fn get<'a, 'b>(
+        &'a self,
+        page_id: &Self::PageId,
+        deserialize_data: <T as DeserializeFromMinimal>::ExternalData<'b>,
+    ) -> Option<Arc<Self::Page>> {
+        if !self.pageuse.lock().unwrap().is_valid(page_id) {
+            return None;
+        }
+
+        Some(self.cache.get_or_insert(*page_id, || {
+            let p = Arc::new(Page::open(&self.pageuse, page_id, deserialize_data).unwrap());
+            let len = p.component_pages.len() * PageId::<K>::byte_size();
+            (len, p)
+        }))
+    }
+
+    fn flush(&self) {
+        self.cache.evict_all_possible();
+    }
+}
+
 impl<const K: usize, T, File: Filelike> PagedStorage<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
@@ -289,54 +347,6 @@ where
             pageuse,
             cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size()),
         }
-    }
-
-    pub fn new_page(&self, item: T) -> PageId<K> {
-        let id = self.pageuse.lock().unwrap().alloc_new();
-
-        debug_print!("PagedStorage::new_page calling");
-
-        //this set will always `insert`, never `get`,
-        //because the ID was just allocated.
-        //(even in the case of reallocated pages,
-        //    they'll never be added to the pool for reallocation
-        //    until they're evicted from the cache)
-        self.cache.get_or_insert(id, || {
-            debug_print!("PagedStorage::new_page cache get_or_insert cell entered");
-
-            (
-                PageId::<K>::byte_size(),
-                Arc::new(Page {
-                    pageuse: Arc::clone(&self.pageuse),
-                    item: RwLock::new(item),
-                    dirty: true.into(),
-                    freeable: false.into(),
-                    component_pages: vec![id],
-                }),
-            )
-        });
-
-        id
-    }
-
-    pub fn get<'a, 'b>(
-        &'a self,
-        page_id: &PageId<K>,
-        deserialize_data: <T as DeserializeFromMinimal>::ExternalData<'b>,
-    ) -> Option<Arc<Page<K, T, File>>> {
-        if !self.pageuse.lock().unwrap().is_valid(page_id) {
-            return None;
-        }
-
-        Some(self.cache.get_or_insert(*page_id, || {
-            let p = Arc::new(Page::open(&self.pageuse, page_id, deserialize_data).unwrap());
-            let len = p.component_pages.len() * PageId::<K>::byte_size();
-            (len, p)
-        }))
-    }
-
-    pub fn flush(&self) {
-        self.cache.evict_all_possible();
     }
 }
 
@@ -444,17 +454,15 @@ where
     }
 }
 
-impl<const K: usize, T, File: Filelike> Page<K, T, File>
+impl<const K: usize, T, File: Filelike> StoragePage<T>
+    for Page<K, T, File>
 where
     T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
 {
-    pub fn read_owned(&self) -> PageReadLock<T> {
-        todo!()
-    }
-    pub fn read<'a>(&'a self) -> PageReadLock<'a, T> {
+    fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a {
         self.item.read()
     }
-    pub fn read_arc(self: &Arc<Self>) -> PageArcReadLock<K, T, File> {
+    fn read_arc(self: &Arc<Self>) -> impl Deref<Target = T> {
         unsafe {
             self.item.raw().lock_shared();
             //safety: holds lock!
@@ -464,7 +472,11 @@ where
         }
     }
 
-    pub fn write_arc(self: &Arc<Self>) -> PageArcWriteLock<K, T, File> {
+    fn get_mut(&mut self) -> &mut T {
+        self.item.get_mut()
+    }
+
+    fn write_arc(self: &Arc<Self>) -> impl DerefMut<Target = T> {
         unsafe {
             self.item.raw().lock_exclusive();
             //safety: holds lock!
@@ -474,7 +486,7 @@ where
         }
     }
 
-    pub fn write<'a>(&'a self) -> PageWriteLock<'a, T> {
+    fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
         let w = self.item.write();
         self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
         self.freeable
@@ -483,6 +495,23 @@ where
         w
     }
 
+    ///
+    /// Only call if all references to the Page's ID are inaccessible
+    /// If this is called, then the underlying data MUST NOT write anything
+    /// when serialized. If the underlying data does so, then the page will not
+    /// in fact be freed. If the Page's `write()` method (or any similar) are called before
+    /// the page is finished with, then the page will not in fact be freed.
+    ///
+    unsafe fn allow_free(&self) {
+        self.freeable
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+impl<const K: usize, T, File: Filelike> Page<K, T, File>
+where
+    T: SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal,
+{
     pub(super) fn open<'a>(
         pageuse: &Arc<Mutex<PageUse<K, File>>>,
         page_id: &PageId<K>,
@@ -511,18 +540,6 @@ where
             freeable: false.into(),
             component_pages: reader.page_ids_acc,
         })
-    }
-
-    ///
-    /// Only call if all references to the Page's ID are inaccessible
-    /// If this is called, then the underlying data MUST NOT write anything
-    /// when serialized. If the underlying data does so, then the page will not
-    /// in fact be freed. If the Page's `write()` method (or any similar) are called before
-    /// the page is finished with, then the page will not in fact be freed.
-    ///
-    pub unsafe fn allow_free(&self) {
-        self.freeable
-            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     ///

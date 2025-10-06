@@ -2,25 +2,35 @@ use std::{
     collections::btree_map::Values,
     fmt::Debug,
     marker::PhantomData,
-    sync::{atomic::{AtomicBool, AtomicUsize}, OnceLock},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize}, Arc, OnceLock
+    },
 };
 
 use btree_vec::BTreeVec;
-use minimal_storage::paged_storage::{PageId, PagedStorage};
+use minimal_storage::{
+    multitype_paged_storage::{SingleTypeView, StoreByPage},
+    paged_storage::{Page, PageId, PagedStorage}, pooled_storage::Filelike,
+};
 
 use crate::PAGE_SIZE;
 
 use super::{SparseKey, SparseValue};
 
-pub struct StoredTree<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
-where
+pub struct StoredTree<
+    const DIMENSION_COUNT: usize,
+    const NODE_SATURATION_POINT: usize,
+    Key,
+    Value,
+    StorageBacking: Filelike = std::fs::File,
+    Storage = SingleTypeView<{PAGE_SIZE}, StorageBacking, Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,
+> where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
+    Storage: StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>
 {
-    pub(crate) storage: TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-    pub(crate) root: Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-    pub(crate) structure_dirty: AtomicBool,
-    pub(crate) structure_file: std::fs::File,
+    pub(crate) storage: Storage,
+    pub(crate) root: Arc<Page<{ PAGE_SIZE }, Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>, StorageBacking>>,
 }
 
 pub type TreePagedStorage<

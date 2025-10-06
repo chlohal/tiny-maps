@@ -7,20 +7,24 @@ pub mod tree;
 pub mod tree_serde;
 
 pub trait SparseKey<const DIMENSION_COUNT: usize>:
-    MultidimensionalKey<DIMENSION_COUNT>
+    MultidimensionalKey<DIMENSION_COUNT, Parent: Send + Sync>
     + SerializeMinimal<ExternalData<'static> = ()>
     + DeserializeFromMinimal<ExternalData<'static> = ()>
     + Ord
     + MinimalSerdeFast
+    + Send 
+    + Sync
 {
 }
 impl<
         const DIMENSION_COUNT: usize,
-        T: MultidimensionalKey<DIMENSION_COUNT>
+        T: MultidimensionalKey<DIMENSION_COUNT, Parent: Send + Sync>
             + SerializeMinimal<ExternalData<'static> = ()>
             + DeserializeFromMinimal<ExternalData<'static> = ()>
             + Ord
-            + MinimalSerdeFast,
+            + MinimalSerdeFast
+            + Send
+            + Sync
     > SparseKey<DIMENSION_COUNT> for T
 {
 }
@@ -32,6 +36,8 @@ pub trait SparseValue:
     + DeserializeFromMinimal<ExternalData<'static> = ()>
     + Clone
     + std::fmt::Debug
+    + Send
+    + Sync
 {
 }
 
@@ -42,5 +48,7 @@ impl<T> SparseValue for T where
         + Clone
         + std::fmt::Debug
         + MinimalSerdeFast
+        + Send
+        + Sync
 {
 }

@@ -3,7 +3,7 @@ use std::{
     cmp::min,
     io::{self, BufReader, BufWriter, Read, Write},
     marker::PhantomData,
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc, Mutex,
@@ -59,14 +59,37 @@ impl<const K: usize, File: Filelike + 'static> MultitypePagedStorage<K, File> {
         }
     }
 
-    pub fn new_page<T>(&self, item: T) -> PageId<K>
-    where
+    pub fn single_type_view<
         T: SerializeMinimal<ExternalData<'static> = ()>
             + DeserializeFromMinimal
             + Send
             + Sync
             + 'static,
-    {
+    >(
+        &self,
+    ) -> SingleTypeView<K, File, T> {
+        SingleTypeView {
+            pageuse: Arc::clone(&self.pageuse),
+            cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size()),
+        }
+    }
+}
+
+impl<
+        const K: usize,
+        File: Filelike + 'static,
+        T: SerializeMinimal<ExternalData<'static> = ()>
+            + DeserializeFromMinimal
+            + Send
+            + Sync
+            + 'static,
+    > StoreByPage<T> for MultitypePagedStorage<K, File>
+{
+    type PageId = PageId<K>;
+
+    type Page = Page<K, T, File>;
+
+    fn new_page(&self, item: T) -> Self::PageId {
         let id = self.pageuse.lock().unwrap().alloc_new();
 
         debug_print!("PagedStorage::new_page calling");
@@ -94,18 +117,11 @@ impl<const K: usize, File: Filelike + 'static> MultitypePagedStorage<K, File> {
         id
     }
 
-    pub fn get<'a, 'b, T>(
+    fn get<'a, 'b>(
         &'a self,
-        page_id: &PageId<K>,
+        page_id: &Self::PageId,
         deserialize_data: <T as DeserializeFromMinimal>::ExternalData<'b>,
-    ) -> Option<Arc<Page<K, T, File>>>
-    where
-        T: SerializeMinimal<ExternalData<'static> = ()>
-            + DeserializeFromMinimal
-            + Send
-            + Sync
-            + 'static,
-    {
+    ) -> Option<Arc<Self::Page>> {
         if !self.pageuse.lock().unwrap().is_valid(page_id) {
             return None;
         }
@@ -121,22 +137,7 @@ impl<const K: usize, File: Filelike + 'static> MultitypePagedStorage<K, File> {
         Some(page)
     }
 
-    pub fn single_type_view<
-        T: SerializeMinimal<ExternalData<'static> = ()>
-            + DeserializeFromMinimal
-            + Send
-            + Sync
-            + 'static,
-    >(
-        &self,
-    ) -> SingleTypeView<K, File, T> {
-        SingleTypeView {
-            pageuse: Arc::clone(&self.pageuse),
-            cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size()),
-        }
-    }
-
-    pub fn flush(&self) {
+    fn flush(&self) {
         self.cache.evict_all_possible();
     }
 }
@@ -158,9 +159,12 @@ impl<
             + Send
             + Sync
             + 'static,
-    > SingleTypeView<K, File, T>
+    > StoreByPage<T> for SingleTypeView<K, File, T>
 {
-    pub fn new_page(&self, item: T) -> PageId<K> {
+    type PageId = PageId<K>;
+    type Page = Page<K, T, File>;
+
+    fn new_page(&self, item: T) -> PageId<K> {
         let id = self.pageuse.lock().unwrap().alloc_new();
 
         //this set will always `insert`, never `get`,
@@ -186,7 +190,7 @@ impl<
         id
     }
 
-    pub fn get<'a, 'b>(
+    fn get<'a, 'b>(
         &'a self,
         page_id: &PageId<K>,
         deserialize_data: <T as DeserializeFromMinimal>::ExternalData<'b>,
@@ -205,7 +209,39 @@ impl<
         Some(page)
     }
 
-    pub fn flush(&self) {
+    fn flush(&self) {
         self.cache.evict_all_possible();
     }
+}
+
+pub trait StoragePage<T> {
+    fn get_mut(&mut self) -> &mut T;
+
+    fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a;
+    fn read_arc(self: &Arc<Self>) -> impl Deref<Target = T>;
+
+    fn write_arc(self: &Arc<Self>) -> impl DerefMut<Target = T>;
+    fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a;
+
+    ///
+    /// Only call if all references to the Page's ID are inaccessible
+    /// If this is called, then the underlying data MUST NOT write anything
+    /// when serialized. If the underlying data does so, then the page will not
+    /// in fact be freed. If the Page's `write()` method (or any similar) are called before
+    /// the page is finished with, then the page will not in fact be freed.
+    ///
+    unsafe fn allow_free(&self);
+}
+
+pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal> {
+    type PageId;
+    type Page: StoragePage<Item>;
+
+    fn new_page(&self, item: Item) -> Self::PageId;
+    fn get<'a, 'b>(
+        &'a self,
+        page_id: &Self::PageId,
+        deserialize_data: <Item as DeserializeFromMinimal>::ExternalData<'b>,
+    ) -> Option<Arc<Self::Page>>;
+    fn flush(&self);
 }

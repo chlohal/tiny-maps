@@ -14,7 +14,9 @@ use crate::{
 
 use crate::tree_traits::{Dimension, MultidimensionalParent};
 use minimal_storage::{
+    multitype_paged_storage::{MultitypePagedStorage, StoragePage, StoreByPage},
     paged_storage::{Page, PageId, PagedStorage},
+    pooled_storage::Filelike,
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
 };
 
@@ -26,53 +28,68 @@ where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
 {
-    pub fn new(bbox: Key::Parent, folder: PathBuf) -> Self {
+    pub fn new(bbox: Key::Parent, storage_file: PathBuf) -> Self {
         let storage_file = std::fs::File::options()
             .create(true)
             .read(true)
             .write(true)
-            .open(&folder.join("data"))
-            .unwrap();
-        let mut storage = PagedStorage::open(storage_file);
-
-        let mut structure_file = File::options()
-            .write(true)
-            .create(true)
-            .read(true)
-            .open(folder.join("structure"))
+            .open(&storage_file)
             .unwrap();
 
-        let root = if structure_file.metadata().unwrap().len() == 0 {
-            let node = Node::new(bbox.clone(), &mut storage);
+        let storage = MultitypePagedStorage::open(storage_file);
 
-            Root {
-                root_bbox: bbox,
-                node,
+        Self::new_with_storage(bbox, storage)
+    }
+    pub fn new_with_rootpage(
+        bbox: Key::Parent,
+        storage: MultitypePagedStorage<{ PAGE_SIZE }>,
+        root_page_id: PageId<{ PAGE_SIZE }>,
+    ) -> Self {
+        Self::new_with_rootpage_and_storage(bbox, storage, root_page_id)
+    }
+
+    pub fn new_with_storage(
+        bbox: Key::Parent,
+        storage: MultitypePagedStorage<{ PAGE_SIZE }>,
+    ) -> Self {
+        Self::new_with_rootpage_and_storage(bbox, storage, PageId::new(1))
+    }
+
+    pub fn new_with_rootpage_and_storage(
+        bbox: Key::Parent,
+        mut storage: MultitypePagedStorage<{ PAGE_SIZE }>,
+        root_page_id: PageId<{ PAGE_SIZE }>,
+    ) -> Self {
+        let root_page = storage.get(&root_page_id, ());
+
+        let root = match root_page {
+            Some(r) => r,
+            None => {
+                let node = Node::<{ DIMENSION_COUNT }, { NODE_SATURATION_POINT }, Key, Value>::new(
+                    bbox.clone(),
+                    &mut storage,
+                );
+
+                let actual_root_page_id = storage.new_page(Root {
+                    root_bbox: bbox,
+                    node,
+                });
+
+                if root_page_id != actual_root_page_id {
+                    panic!("Manually specified root page does not match actual")
+                }
+
+                storage.get(&actual_root_page_id, ()).unwrap()
             }
-        } else {
-            Root::deserialize_minimal(&mut structure_file, &folder).unwrap()
         };
 
         StoredTree {
-            structure_file,
             root,
-            structure_dirty: true.into(),
-            storage,
+            storage: storage.single_type_view(),
         }
     }
 
     pub fn flush<'s>(&'s mut self) -> std::io::Result<()> {
-        //if self
-        //    .structure_dirty
-        //    .swap(false, std::sync::atomic::Ordering::Acquire)
-        {
-            self.structure_file.rewind()?;
-
-            let mut buf = BufWriter::new(&mut self.structure_file);
-            self.root.minimally_serialize(&mut buf, ())?;
-            buf.flush()?;
-        }
-
         self.storage.flush();
         Ok(())
     }
@@ -84,21 +101,21 @@ where
     }
 
     pub fn find_entries_in_box<'a>(
-        &'a self,
+        &self,
         query: &'a Key::Parent,
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
-        self.root
-            .search_all_nodes_touching_area(query)
-            .flat_map(move |(node, _bbox)| {
-                let page_read = Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
+        let mut iterf = StoragePage::read_arc(&self.root).search_all_nodes_touching_area(query);
+        std::iter::from_fn(move || iterf.next()).flat_map(move |(node, _bbox)| {
+            let page_read = Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
 
-                let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
+            let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
 
-                std::iter::from_fn(move || loop {
-                    let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
-                    return Some((k.to_owned(), v.to_owned()));
-                }).flat_map(|(k,vs)| vs.into_iter().map(move |v| (k.clone(),v)))
+            std::iter::from_fn(move || loop {
+                let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
+                return Some((k.to_owned(), v.to_owned()));
             })
+            .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
+        })
     }
 
     pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
@@ -115,25 +132,24 @@ where
     /// This behaves exactly like mapping the provided sorted `iter` over `get()`,
     /// with optimiziations to avoid re-fetching pages from physical storage.
     ///
-    /// The iterator MUST be sorted as determined by the Ord trait for `Key` ; otherwise, 
+    /// The iterator MUST be sorted as determined by the Ord trait for `Key` ; otherwise,
     /// the return is unspecified, but will not result in undefined behaviour.
     ///
     /// The returned iterator will NOT be sorted (except in certain trivial cases).
-    /// 
+    ///
     /// An empty iterator will currently panic for implementation reasons.
     ///
     pub fn get_all<'a>(
         &'a self,
         mut iter: impl Iterator<Item = Key> + 'a,
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
-
         return iter.filter_map(|x| {
             let value = self.get(&x)?;
-            Some((x,value))
+            Some((x, value))
         });
 
         let mut query = iter.next().unwrap();
-        let (Node { ref page_id, .. }, _leaf_bbox) = self.root.search_leaf_for_key(&query);
+        let (Node { page_id, .. }, _leaf_bbox) = self.root.read().search_leaf_for_key(&query);
 
         let mut page_is_exact = true;
         let mut page = self.storage.get(&page_id, ()).unwrap();
@@ -153,7 +169,8 @@ where
                         //if it wasn't found, but the page was inexact, then get the exact page and try again.
                         drop(page_lock);
                         page_is_exact = true;
-                        let (Node { ref page_id, .. }, _leaf_bbox) = self.root.search_leaf_for_key(&query);
+                        let rr = self.root.read();
+                        let (Node { page_id, .. }, _leaf_bbox) = rr.search_leaf_for_key(&query);
                         page = self.storage.get(&page_id, ()).unwrap();
                         continue;
                     }
@@ -171,9 +188,9 @@ where
     pub fn insert(&self, k: Key, item: Value) {
         debug_print!("begin insert()");
 
-        let (leaf, structure_changed) = self
-            .root
-            .get_key_leaf_splitting_if_needed(&k, &self.storage);
+        let root_read = self.root.read();
+        let (leaf, structure_changed) =
+            root_read.get_key_leaf_splitting_if_needed(&k, &self.storage);
 
         debug_print!("got leaf");
 
@@ -191,18 +208,17 @@ where
 
         drop(child);
         drop(page);
-
-        self.structure_dirty
-            .fetch_or(structure_changed, std::sync::atomic::Ordering::AcqRel);
     }
 
     pub fn expand_to_depth(&mut self, depth: usize) {
-        self.root.node.expand_to_depth(
-            depth,
-            &self.root.root_bbox,
-            &mut self.storage,
-            &Default::default(),
-        )
+        let mut root = self.root.write();
+
+        let Root {
+            ref mut node,
+            ref root_bbox,
+        } = &mut *root;
+
+        node.expand_to_depth(depth, &root_bbox, &mut self.storage, &Default::default())
     }
 }
 
@@ -327,7 +343,10 @@ where
     fn get_key_leaf_splitting_if_needed<'a>(
         &'a self,
         k: &Key,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        storage: &impl StoreByPage<
+            Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            PageId = PageId<{ PAGE_SIZE }>,
+        >,
     ) -> (
         &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         bool,
@@ -373,14 +392,20 @@ where
 {
     pub(crate) fn new(
         bbox: Key::Parent,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        storage: &impl StoreByPage<
+            Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            PageId = PageId<{ PAGE_SIZE }>,
+        >,
     ) -> Self {
         Self::new_with_children(bbox, storage, BTreeVec::new())
     }
 
     pub(crate) fn new_with_children(
         bbox: Key::Parent,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        storage: &impl StoreByPage<
+            Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            PageId = PageId<{ PAGE_SIZE }>,
+        >,
         children: BTreeVec<Key, Value>,
     ) -> Self {
         debug_print!("new_with_children called");
@@ -397,7 +422,10 @@ where
         &mut self,
         depth: usize,
         bbox: &Key::Parent,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        storage: &impl StoreByPage<
+            Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            PageId = PageId<{ PAGE_SIZE }>,
+        >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
         self.try_split_left_right(storage, direction);
@@ -415,7 +443,10 @@ where
 
     fn try_split_left_right(
         &self,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        storage: &impl StoreByPage<
+            Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            PageId = PageId<{ PAGE_SIZE }>,
+        >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
         if self.left_right_split.get().is_some() {
@@ -439,7 +470,10 @@ where
     }
     fn split_left_right_unchecked(
         &self,
-        storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        storage: &impl StoreByPage<
+            Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            PageId = PageId<{ PAGE_SIZE }>,
+        >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
         debug_print!("split_left_right_unchecked");

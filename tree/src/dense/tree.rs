@@ -21,8 +21,7 @@ use crate::tree_traits::{
     Dimension, MultidimensionalKey, MultidimensionalParent, MultidimensionalValue,
 };
 use minimal_storage::{
-    paged_storage::{Page, PageArcReadLock, PageId, PageReadLock, PageRwLock, PagedStorage},
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    multitype_paged_storage::{StoragePage, StoreByPage}, paged_storage::{Page, PageArcReadLock, PageId, PageReadLock, PageRwLock, PagedStorage}, serialize_min::{DeserializeFromMinimal, SerializeMinimal}
 };
 
 impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>

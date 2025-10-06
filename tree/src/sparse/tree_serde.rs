@@ -74,17 +74,17 @@ where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
 {
-    type ExternalData<'d> = &'d PathBuf;
+    type ExternalData<'d> = ();
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
-        external_data: Self::ExternalData<'d>,
+        _external_data: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
         let root_bbox: Key::Parent = DeserializeFromMinimal::deserialize_minimal(from, ())?;
 
         let node = DeserializeFromMinimal::deserialize_minimal(
             from,
-            (external_data, root_bbox.clone(), Default::default()),
+            (root_bbox.clone(), Default::default()),
         )?;
 
         Ok(Self { root_bbox, node })
@@ -120,14 +120,13 @@ where
     Value: SparseValue,
 {
     type ExternalData<'d> = (
-        &'d PathBuf,
         Key::Parent,
         <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     );
 
     fn deserialize_minimal<'a, 'd: 'a, R: std::io::Read>(
         from: &'a mut R,
-        (root_path, parent, direction): Self::ExternalData<'d>,
+        (parent, direction): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
         let has_split = u8::deserialize_minimal(from, ())? == b'y';
         let page_id = PageId::deserialize_minimal(from, ())?;
@@ -141,11 +140,11 @@ where
             OnceLock::from((
                 Box::new(Self::deserialize_minimal(
                     from,
-                    (root_path, left_bbox, next_dir),
+                    (left_bbox, next_dir),
                 )?),
                 Box::new(Self::deserialize_minimal(
                     from,
-                    (root_path, right_bbox, next_dir),
+                    (right_bbox, next_dir),
                 )?),
             ))
         } else {
