@@ -68,8 +68,7 @@ where
                 let actual_root_page_id = storage.new_page_with(|| Root {
                     root_bbox: bbox.clone(),
                     node: Node::<{ DIMENSION_COUNT }, { NODE_SATURATION_POINT }, Key, Value>::new(
-                        bbox,
-                        &storage,
+                        bbox, &storage,
                     ),
                 });
 
@@ -194,7 +193,6 @@ where
             root_read.get_key_leaf_splitting_if_needed(&k, &self.storage);
 
         debug_print!("got leaf");
-
 
         let page = self.storage.get(&leaf.page_id, ()).unwrap();
         let mut child = page.write();
@@ -363,10 +361,22 @@ where
             match tree.left_right_split.get() {
                 Some((ref left, ref right)) => {
                     if k.is_contained_in(&left.bbox) {
+                        if left.bbox == tree.bbox {
+                            panic!(
+                                "More than {NODE_SATURATION_POINT} objects are being stored in one key; either increase the saturation generic, add some wrapper that holds multiple objects, or ensure that keys are different."
+                            );
+                        }
+
                         tree = left;
                         direction = direction.next_axis();
                         continue;
                     } else if k.is_contained_in(&right.bbox) {
+                        if right.bbox == tree.bbox {
+                            panic!(
+                                "More than {NODE_SATURATION_POINT} objects are being stored in one key; either increase the saturation generic, add some wrapper that holds multiple objects, or ensure that keys are different."
+                            );
+                        }
+                        
                         tree = right;
                         direction = direction.next_axis();
                         continue;
@@ -374,7 +384,6 @@ where
                 }
                 None => {
                     if tree.try_split_left_right(storage, &direction) {
-                        debug_print!("wow we split!");
                         structure_changed = true;
                         continue;
                     }
@@ -458,7 +467,7 @@ where
         debug_print!("try_split_left_right starting, passed the first oncelock check");
 
         let page = storage.get(&self.page_id, ()).unwrap();
-        let inner = page.read();        
+        let inner = page.read();
 
         debug_print!("got page");
 
