@@ -11,7 +11,7 @@ use osm_value_atom::LiteralValue;
 use osmpbfreader::{OsmObj};
 
 use tree::{
-    bbox::{BoundingBox, EARTH_BBOX}, open_tree_dense, open_tree_sparse, point_range::StoredBinaryTree, StoredTree
+    bbox::{BoundingBox, EARTH_BBOX}, open_tree_dense, open_tree_sparse, point_range::StoredBinaryTree, dense::structure::StoredTree
 };
 
 

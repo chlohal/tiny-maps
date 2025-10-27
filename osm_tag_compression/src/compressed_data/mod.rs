@@ -69,14 +69,15 @@ impl CompressedOsmData {
             OsmObj::Way(w) => osm_way_to_compressed_node(w, bbox_cache)?,
             OsmObj::Relation(r) => osm_relation_to_compressed_node(r, bbox_cache)?,
         };
-        
-        //Don't write empty nodes to the database. Their positions will still be written to the bbox cache
-        //for use in ways later on, but we don't need them taking up space as individual database objects.
-        // if let CompressedOsmData::Node { tags: NodeFields::Single(None), .. } = value {
-        //     return Ok(None);
-        // }
 
         insert_bbox(&value.osm_id(), value.bbox().clone(), bbox_cache);
+        
+        //Don't write empty nodes to the database. Their positions will still be written to the bbox cache
+        //for use in ways later on, but we don't need them taking up space as individual database objects,
+        //since they won't really be rendered anyways
+        if let CompressedOsmData::Node { tags: NodeFields::Single(None), .. } = value {
+            return Ok(None);
+        }
 
         debug_print!("inserted bbox");
 

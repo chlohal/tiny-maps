@@ -26,7 +26,7 @@ pub struct GeometryLoader {
 
 impl GeometryLoader {
     pub fn new(
-        geography: tree::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData>,
+        geography: tree::dense::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData>,
     ) -> Self {
         let bbox = geography.root_bbox().to_owned().into();
         let has_updates = Arc::new(false.into());
@@ -135,7 +135,7 @@ fn compute_deepest_level_for_visible_objects(
 pub fn start_object_loading(
     mut bbox: BoundingBox<f64>,
     mut window_size: PhysicalSize<u32>,
-    geography: tree::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData>,
+    geography: tree::dense::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData>,
     shared_buf: Arc<Mutex<Vec<(BoundingBox<i32>, UncompressedOsmData)>>>,
     has_updates: Arc<AtomicBool>,
 ) -> Sender<Message> {
@@ -194,7 +194,7 @@ fn reload_objects<'a>(
     bbox: &'a BoundingBox<i32>,
     maximum_level: usize,
     store: &'a Arc<Mutex<Vec<(BoundingBox<i32>, UncompressedOsmData)>>>,
-    geography: &'a tree::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData>,
+    geography: &'a tree::dense::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData>,
     has_updates: &'a AtomicBool,
 ) -> impl Iterator<Item = ()> + 'a {
     dbg!(&bbox);

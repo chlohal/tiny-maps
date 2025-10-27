@@ -52,7 +52,7 @@ impl State {
 
 impl WindowState for State {
     fn init() -> Self {
-        let geography: tree::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData> =
+        let geography: tree::dense::StoredTree<2, 8000, BoundingBox<i32>, UncompressedOsmData> =
             open_tree_dense::<2, DATA_SATURATION, BoundingBox<i32>, UncompressedOsmData>(
                 std::env::current_dir().unwrap().join(".map/geography"),
                 EARTH_BBOX,
@@ -72,7 +72,12 @@ impl WindowState for State {
         }
     }
 
-    fn update(&mut self, rerender: &mut bool, event: &winit::event::WindowEvent, physical_size: &PhysicalSize<u32>) {
+    fn update(
+        &mut self,
+        rerender: &mut bool,
+        event: &winit::event::WindowEvent,
+        physical_size: &PhysicalSize<u32>,
+    ) {
         *rerender |= self.geo_objects.is_updated();
 
         match event {
@@ -188,8 +193,6 @@ impl WindowState for State {
         draw_lonlat_grid(scene, &stroke, &bbox_transform);
 
         for (bbox, itm) in geo_objects.iter() {
-            let mut path = vello::kurbo::BezPath::new();
-
             let Some(points) = itm.decompress_way_points(bbox).transpose().unwrap() else {
                 continue;
             };
@@ -198,12 +201,7 @@ impl WindowState for State {
             }
             let is_filled = false; //points.last() == points.first();
 
-            let mut points = points.into_iter().map(|(x, y)| (x as f64, y as f64));
-
-            path.move_to(points.next().unwrap());
-            for point in points {
-                path.line_to(point);
-            }
+            let path = path_of_way(points, &view_bbox);
 
             scene.stroke(
                 &stroke,
@@ -215,12 +213,12 @@ impl WindowState for State {
 
             if is_filled {
                 scene.fill(
-                Fill::NonZero,
-                bbox_transform,
-                geo_fill_color,
-                Some(brush_transform),
-                &path,
-            );
+                    Fill::NonZero,
+                    bbox_transform,
+                    geo_fill_color,
+                    Some(brush_transform),
+                    &path,
+                );
             }
         }
 
@@ -232,8 +230,35 @@ impl WindowState for State {
     }
 }
 
+//TODO: ITS WRAPPING AROUND THE WORLD!!!!!!!!
+fn path_of_way(points: Vec<(i32, i32)>, view_bbox: &BoundingBox<f64>) -> vello::kurbo::BezPath {
+    let mut path = vello::kurbo::BezPath::new();
+
+    let on_left = points[0].0 < 0;
+
+    let mut points = points.into_iter().map(|(x, y)| {
+        let (mut x, mut y) = (x as f64, y as f64);
+
+        if on_left && x > 0.0 {
+            x -= EARTH_BBOX.width() as f64;
+        }
+        if !on_left && x < 0.0 {
+            x += EARTH_BBOX.width() as f64;
+        }
+        
+        (x, y)
+    });
+
+    path.move_to(points.next().unwrap());
+    for point in points {
+        path.line_to(point);
+    }
+    path
+}
+
 fn draw_lonlat_grid(scene: &mut vello::Scene, stroke: &Stroke, screen_transform: &Affine) {
-    static EARTH_BBOX_FLOAT: std::sync::LazyLock<BoundingBox<f64>> = std::sync::LazyLock::new(|| EARTH_BBOX.into());
+    static EARTH_BBOX_FLOAT: std::sync::LazyLock<BoundingBox<f64>> =
+        std::sync::LazyLock::new(|| EARTH_BBOX.into());
 
     let (left, bottom) = (*EARTH_BBOX_FLOAT.x(), *EARTH_BBOX_FLOAT.y());
     let (right, top) = (*EARTH_BBOX_FLOAT.x_end(), *EARTH_BBOX_FLOAT.y_end());
