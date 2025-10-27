@@ -26,12 +26,12 @@ pub fn open_file<
     NODE_SATURATION_POINT,
     Key,
     Value,
-    Page<
+    Page<PAGE_SIZE, Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>, std::fs::File>,
+    SingleTypeView<
         PAGE_SIZE,
-        Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         std::fs::File,
+        Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
     >,
-    SingleTypeView<PAGE_SIZE, std::fs::File, Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,
 > {
     let storage_file = std::fs::File::options()
         .create(true)
@@ -42,7 +42,7 @@ pub fn open_file<
 
     let storage = MultitypePagedStorage::open(storage_file);
 
-    open_storage(bbox, &storage, PageId::new(1))
+    open_storage(bbox, &storage, Some(PageId::new(1)))
 }
 
 pub fn open_storage<
@@ -63,7 +63,7 @@ pub fn open_storage<
 >(
     bbox: Key::Parent,
     storage: &ThisStorage,
-    root_page_id: PageId<PAGE_SIZE>,
+    root_page_id: Option<PageId<PAGE_SIZE>>,
 ) -> StoredTree<
     DIMENSION_COUNT,
     NODE_SATURATION_POINT,
@@ -78,29 +78,27 @@ pub fn open_storage<
         >,
     >>::Page,
     <ThisStorage as StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>>::SubView,
-> {
-    let root_page = StoreByPage::<Root<_, _, _, _>>::get(storage, &root_page_id, ());
+>{
+    let root_page = root_page_id
+        .and_then(|id| StoreByPage::<Root<_, _, _, _>>::get(storage, &id, ()));
 
     let (root_page_id, root) = match root_page {
-        Some(r) => (root_page_id, r),
+        Some(r) => (root_page_id.unwrap(), r),
         None => {
             let actual_root_page_id = storage.new_page_with(|| Root {
                 root_bbox: bbox.clone(),
-                node: Node::<
-                    { DIMENSION_COUNT },
-                    { NODE_SATURATION_POINT },
-                    Key,
-                    Value
-                >::new(bbox, storage),
+                node: Node::<{ DIMENSION_COUNT }, { NODE_SATURATION_POINT }, Key, Value>::new(
+                    bbox, storage,
+                ),
             });
 
-            if root_page_id != actual_root_page_id {
+            if root_page_id.is_some_and(|id| id != actual_root_page_id) {
                 panic!("Manually specified root page {root_page_id:?} does not match actual {actual_root_page_id:?}")
             }
 
             (
                 actual_root_page_id,
-                StoreByPage::<Root<_, _, _, _>>::get(storage, &actual_root_page_id, ()).unwrap()
+                StoreByPage::<Root<_, _, _, _>>::get(storage, &actual_root_page_id, ()).unwrap(),
             )
         }
     };
