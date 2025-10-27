@@ -139,6 +139,12 @@ impl<
         Some(page)
     }
 
+    type SubView = SingleTypeView<K, File, T>;
+
+    fn sub_view(&self) -> Self::SubView {
+        self.single_type_view()
+    }
+
     fn flush(&self) {
         self.cache.evict_all_possible();
     }
@@ -165,6 +171,8 @@ impl<
 {
     type PageId = PageId<K>;
     type Page = Page<K, T, File>;
+
+    
 
     fn new_page_with(&self, f: impl FnOnce() -> T) -> PageId<K> {
         let id = self.pageuse.lock().unwrap().alloc_new();
@@ -215,6 +223,15 @@ impl<
     fn flush(&self) {
         self.cache.evict_all_possible();
     }
+
+    type SubView = Self;
+
+    fn sub_view(&self) -> Self {
+        Self {
+            pageuse: Arc::clone(&self.pageuse),
+            cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size()),
+        }
+    }
 }
 
 pub trait StoragePage<T: 'static> {
@@ -244,7 +261,7 @@ pub trait StoragePage<T: 'static> {
 }
 
 pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static> {
-    type PageId;
+    type PageId : 'static + SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal<ExternalData<'static> = ()>;
     type Page: StoragePage<Item>;
 
     fn new_page_with(&self, f: impl FnOnce() -> Item) -> Self::PageId;
@@ -256,5 +273,11 @@ pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static>
         page_id: &Self::PageId,
         deserialize_data: <Item as DeserializeFromMinimal>::ExternalData<'b>,
     ) -> Option<Arc<Self::Page>>;
+
+    type SubView: StoreByPage<Item, PageId = Self::PageId, Page = Self::Page>;
+
+    ///Make another page storer which shares the same backing as `self`, but uses 
+    /// a separate cache and can be flushed seperately.
+    fn sub_view(&self) -> Self::SubView;
     fn flush(&self);
 }

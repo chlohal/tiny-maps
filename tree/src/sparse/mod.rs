@@ -6,6 +6,11 @@ pub mod structure;
 pub mod tree;
 pub mod tree_serde;
 
+pub mod open;
+pub use open::{open_file, open_storage};
+
+pub use structure::StoredTree;
+
 pub trait SparseKey<const DIMENSION_COUNT: usize>:
     MultidimensionalKey<DIMENSION_COUNT, Parent: Send + Sync>
     + SerializeMinimal<ExternalData<'static> = ()>

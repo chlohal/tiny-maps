@@ -67,12 +67,13 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId>
     DeserializeFromMinimal
-    for crate::sparse::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+    for crate::sparse::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
+    PageId: DeserializeFromMinimal<ExternalData<'static> = ()>
 {
     type ExternalData<'d> = ();
 
@@ -91,11 +92,12 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
-    for crate::sparse::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId> SerializeMinimal
+    for crate::sparse::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
+    PageId: SerializeMinimal<ExternalData<'static> = ()>
 {
     type ExternalData<'d> = ();
 
@@ -112,12 +114,13 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId>
     DeserializeFromMinimal
-    for crate::sparse::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+    for crate::sparse::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
+    PageId: DeserializeFromMinimal<ExternalData<'static> = ()>
 {
     type ExternalData<'d> = (
         Key::Parent,
@@ -161,11 +164,12 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value> SerializeMinimal
-    for crate::sparse::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId> SerializeMinimal
+    for crate::sparse::structure::Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
+    PageId: SerializeMinimal<ExternalData<'static> = ()>
 {
     type ExternalData<'d> = ();
 

@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::{BufWriter, Seek, Write},
+    marker::PhantomData,
     path::PathBuf,
 };
 
@@ -15,77 +16,39 @@ use crate::{
 use crate::tree_traits::{Dimension, MultidimensionalParent};
 use minimal_storage::{
     multitype_paged_storage::{MultitypePagedStorage, StoragePage, StoreByPage},
-    paged_storage::{Page, PageId, PagedStorage},
-    pooled_storage::Filelike,
-    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    paged_storage::{Page, PageId},
 };
 
 use super::{SparseKey, SparseValue};
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
-    StoredTree<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+
+
+impl<
+        const DIMENSION_COUNT: usize,
+        const NODE_SATURATION_POINT: usize,
+        Key,
+        Value,
+        RootPage,
+        Storage,
+    > StoredTree<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, RootPage, Storage>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
+    Storage:
+        StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,
+    RootPage:
+        StoragePage<
+            Root<
+                DIMENSION_COUNT,
+                NODE_SATURATION_POINT,
+                Key,
+                Value,
+                <Storage as StoreByPage<
+                    Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+                >>::PageId,
+            >,
+        >,
 {
-    pub fn new(bbox: Key::Parent, storage_file: PathBuf) -> Self {
-        let storage_file = std::fs::File::options()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&storage_file)
-            .unwrap();
-
-        let storage = MultitypePagedStorage::open(storage_file);
-
-        Self::new_with_storage(bbox, storage)
-    }
-    pub fn new_with_rootpage(
-        bbox: Key::Parent,
-        storage: MultitypePagedStorage<{ PAGE_SIZE }>,
-        root_page_id: PageId<{ PAGE_SIZE }>,
-    ) -> Self {
-        Self::new_with_rootpage_and_storage(bbox, storage, root_page_id)
-    }
-
-    pub fn new_with_storage(
-        bbox: Key::Parent,
-        storage: MultitypePagedStorage<{ PAGE_SIZE }>,
-    ) -> Self {
-        Self::new_with_rootpage_and_storage(bbox, storage, PageId::new(1))
-    }
-
-    pub fn new_with_rootpage_and_storage(
-        bbox: Key::Parent,
-        storage: MultitypePagedStorage<{ PAGE_SIZE }>,
-        root_page_id: PageId<{ PAGE_SIZE }>,
-    ) -> Self {
-        let root_page = storage.get(&root_page_id, ());
-
-        let root = match root_page {
-            Some(r) => r,
-            None => {
-                let actual_root_page_id = storage.new_page_with(|| Root {
-                    root_bbox: bbox.clone(),
-                    node: Node::<{ DIMENSION_COUNT }, { NODE_SATURATION_POINT }, Key, Value>::new(
-                        bbox, &storage,
-                    ),
-                });
-
-                if root_page_id != actual_root_page_id {
-                    panic!("Manually specified root page {root_page_id:?} does not match actual {actual_root_page_id:?}")
-                }
-
-                storage.get(&actual_root_page_id, ()).unwrap()
-            }
-        };
-
-        StoredTree {
-            root,
-            storage: storage.single_type_view(),
-        }
-    }
-
     pub fn flush<'s>(&'s mut self) -> std::io::Result<()> {
         self.storage.flush();
         Ok(())
@@ -121,7 +84,7 @@ where
         let root = self.root.read();
         let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
 
-        let page = self.storage.get(&leaf.page_id, ()).unwrap();
+        let page: std::sync::Arc<<Storage as StoreByPage<_>>::Page> = self.storage.get(&leaf.page_id, ()).unwrap();
 
         let item = page.read().children.get(&query)?.iter().next().cloned();
 
@@ -222,8 +185,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
-    Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId>
+    Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
@@ -233,7 +196,7 @@ where
         area: &'a Key::Parent,
     ) -> impl Iterator<
         Item = (
-            &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
             Key::Parent,
         ),
     > + 'a {
@@ -264,7 +227,7 @@ where
         &self,
         area: &Key::Parent,
     ) -> (
-        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
         Key::Parent,
         <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
@@ -306,7 +269,7 @@ where
         &'a self,
         k: &Key,
     ) -> (
-        &'a Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        &'a Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
         Key::Parent,
     ) {
         let mut tree = &self.node;
@@ -345,10 +308,10 @@ where
         k: &Key,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<{ PAGE_SIZE }>,
+            PageId = PageId,
         >,
     ) -> (
-        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
         bool,
     ) {
         let mut tree = &self.node;
@@ -376,7 +339,7 @@ where
                                 "More than {NODE_SATURATION_POINT} objects are being stored in one key; either increase the saturation generic, add some wrapper that holds multiple objects, or ensure that keys are different."
                             );
                         }
-                        
+
                         tree = right;
                         direction = direction.next_axis();
                         continue;
@@ -395,8 +358,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
-    Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId>
+    Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
@@ -405,7 +368,7 @@ where
         bbox: Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<{ PAGE_SIZE }>,
+            PageId = PageId,
         >,
     ) -> Self {
         Self::new_with_children(bbox, storage, BTreeVec::new())
@@ -415,7 +378,7 @@ where
         bbox: Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<{ PAGE_SIZE }>,
+            PageId = PageId,
         >,
         children: BTreeVec<Key, Value>,
     ) -> Self {
@@ -435,7 +398,7 @@ where
         bbox: &Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<{ PAGE_SIZE }>,
+            PageId = PageId,
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
@@ -456,7 +419,7 @@ where
         &self,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<{ PAGE_SIZE }>,
+            PageId = PageId,
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
@@ -483,7 +446,7 @@ where
         &self,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<{ PAGE_SIZE }>,
+            PageId = PageId,
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {

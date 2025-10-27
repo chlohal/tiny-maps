@@ -318,6 +318,15 @@ where
     fn flush(&self) {
         self.cache.evict_all_possible();
     }
+
+    type SubView = Self;
+
+    fn sub_view(&self) -> Self::SubView {
+        Self {
+            pageuse: Arc::clone(&self.pageuse),
+            cache: Cache::new(ALLOWED_CACHE_PHYSICAL_PAGES * PageId::<K>::byte_size()),
+        }
+    }
 }
 
 impl<const K: usize, T, File: Filelike> PagedStorage<K, T, File>
