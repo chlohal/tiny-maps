@@ -40,7 +40,7 @@ pub fn open_tree_sparse<const D: usize, const S: usize, Key, Value>(
     Value,
     minimal_storage::paged_storage::Page<
         PAGE_SIZE,
-        sparse::structure::Root<D, S, Key, Value, PageId<PAGE_SIZE>>,
+        sparse::structure::Root<D, S, Key, Value>,
         std::fs::File,
     >,
     SingleTypeView<PAGE_SIZE, std::fs::File, Inner<D, S, Key, Value>>,

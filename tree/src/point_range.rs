@@ -21,7 +21,7 @@ pub type StoredBinaryTree<const NODE_SATURATION_POINT: usize, K, T> =
         NODE_SATURATION_POINT,
         K,
         T,
-        Page<{ PAGE_SIZE }, Root<1, NODE_SATURATION_POINT, K, T, PageId<PAGE_SIZE>>, std::fs::File>,
+        Page<{ PAGE_SIZE }, Root<1, NODE_SATURATION_POINT, K, T>, std::fs::File>,
         SingleTypeView<PAGE_SIZE, std::fs::File, Inner<1, NODE_SATURATION_POINT, K, T>>,
     >;
 

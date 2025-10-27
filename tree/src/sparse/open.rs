@@ -28,7 +28,7 @@ pub fn open_file<
     Value,
     Page<
         PAGE_SIZE,
-        Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId<PAGE_SIZE>>,
+        Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         std::fs::File,
     >,
     SingleTypeView<PAGE_SIZE, std::fs::File, Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,
@@ -50,33 +50,20 @@ pub fn open_storage<
     const NODE_SATURATION_POINT: usize,
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
-    ThisStorage: StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>
+    ThisStorage: StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>, PageId = PageId<PAGE_SIZE>>
         + StoreByPage<
             Root<
                 DIMENSION_COUNT,
                 NODE_SATURATION_POINT,
                 Key,
                 Value,
-                <ThisStorage as StoreByPage<
-                    Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-                >>::PageId,
             >,
-            PageId: PartialEq + std::fmt::Debug
+            PageId = PageId<PAGE_SIZE>
         >,
 >(
     bbox: Key::Parent,
     storage: &ThisStorage,
-    root_page_id: <ThisStorage as StoreByPage<
-        Root<
-            DIMENSION_COUNT,
-            NODE_SATURATION_POINT,
-            Key,
-            Value,
-            <ThisStorage as StoreByPage<
-                Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            >>::PageId,
-        >,
-    >>::PageId,
+    root_page_id: PageId<PAGE_SIZE>,
 ) -> StoredTree<
     DIMENSION_COUNT,
     NODE_SATURATION_POINT,
@@ -88,17 +75,14 @@ pub fn open_storage<
             NODE_SATURATION_POINT,
             Key,
             Value,
-            <ThisStorage as StoreByPage<
-                Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            >>::PageId,
         >,
     >>::Page,
     <ThisStorage as StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>>::SubView,
 > {
-    let root_page = StoreByPage::<Root<_, _, _, _, _>>::get(storage, &root_page_id, ());
+    let root_page = StoreByPage::<Root<_, _, _, _>>::get(storage, &root_page_id, ());
 
-    let root = match root_page {
-        Some(r) => r,
+    let (root_page_id, root) = match root_page {
+        Some(r) => (root_page_id, r),
         None => {
             let actual_root_page_id = storage.new_page_with(|| Root {
                 root_bbox: bbox.clone(),
@@ -106,8 +90,7 @@ pub fn open_storage<
                     { DIMENSION_COUNT },
                     { NODE_SATURATION_POINT },
                     Key,
-                    Value,
-                    _,
+                    Value
                 >::new(bbox, storage),
             });
 
@@ -115,7 +98,10 @@ pub fn open_storage<
                 panic!("Manually specified root page {root_page_id:?} does not match actual {actual_root_page_id:?}")
             }
 
-            StoreByPage::<Root<_, _, _, _, _>>::get(storage, &actual_root_page_id, ()).unwrap()
+            (
+                actual_root_page_id,
+                StoreByPage::<Root<_, _, _, _>>::get(storage, &actual_root_page_id, ()).unwrap()
+            )
         }
     };
 
@@ -124,6 +110,7 @@ pub fn open_storage<
     StoredTree {
         root,
         storage,
+        root_page_id,
         _sb: PhantomData,
     }
 }

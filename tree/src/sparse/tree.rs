@@ -35,17 +35,14 @@ where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
     Storage:
-        StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,
+        StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>, PageId = PageId<PAGE_SIZE>>,
     RootPage:
         StoragePage<
             Root<
                 DIMENSION_COUNT,
                 NODE_SATURATION_POINT,
                 Key,
-                Value,
-                <Storage as StoreByPage<
-                    Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-                >>::PageId,
+                Value
             >,
         >,
 {
@@ -79,6 +76,10 @@ where
     //         .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
     //     })
     // }
+
+    pub fn root_page_id(&self) -> PageId<PAGE_SIZE> {
+        self.root_page_id
+    }
 
     pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
         let root = self.root.read();
@@ -185,8 +186,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId>
-    Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+    Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
@@ -196,7 +197,7 @@ where
         area: &'a Key::Parent,
     ) -> impl Iterator<
         Item = (
-            &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
+            &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
             Key::Parent,
         ),
     > + 'a {
@@ -227,7 +228,7 @@ where
         &self,
         area: &Key::Parent,
     ) -> (
-        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
+        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         Key::Parent,
         <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
@@ -269,7 +270,7 @@ where
         &'a self,
         k: &Key,
     ) -> (
-        &'a Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
+        &'a Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         Key::Parent,
     ) {
         let mut tree = &self.node;
@@ -308,10 +309,10 @@ where
         k: &Key,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId,
+            PageId = PageId<PAGE_SIZE>
         >,
     ) -> (
-        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>,
+        &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
         bool,
     ) {
         let mut tree = &self.node;
@@ -358,8 +359,8 @@ where
     }
 }
 
-impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value, PageId>
-    Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value, PageId>
+impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Value>
+    Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
@@ -368,7 +369,7 @@ where
         bbox: Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId,
+            PageId = PageId<PAGE_SIZE>
         >,
     ) -> Self {
         Self::new_with_children(bbox, storage, BTreeVec::new())
@@ -378,7 +379,7 @@ where
         bbox: Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId,
+            PageId = PageId<PAGE_SIZE>
         >,
         children: BTreeVec<Key, Value>,
     ) -> Self {
@@ -398,7 +399,7 @@ where
         bbox: &Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId,
+            PageId = PageId<PAGE_SIZE>
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
@@ -419,7 +420,7 @@ where
         &self,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId,
+            PageId = PageId<PAGE_SIZE>
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
@@ -446,7 +447,7 @@ where
         &self,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId,
+            PageId = PageId<PAGE_SIZE>
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
