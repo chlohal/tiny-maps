@@ -660,18 +660,17 @@ impl Dimension<2> for LongLatSplitDirection {
     }
 
     fn from_index(index: usize) -> Self {
-        match index {
+        match (index & 1) {
             0 => LongLatSplitDirection::Lat,
             1 => LongLatSplitDirection::Long,
             _ => unreachable!(),
         }
     }
-}
-
-impl Default for LongLatSplitDirection {
-    fn default() -> Self {
+    
+    fn arbitrary_first() -> Self {
         LongLatSplitDirection::Lat
     }
+    
 }
 
 #[cfg(test)]

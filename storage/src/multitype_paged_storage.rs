@@ -172,8 +172,6 @@ impl<
     type PageId = PageId<K>;
     type Page = Page<K, T, File>;
 
-    
-
     fn new_page_with(&self, f: impl FnOnce() -> T) -> PageId<K> {
         let id = self.pageuse.lock().unwrap().alloc_new();
         let item = f();
@@ -212,7 +210,7 @@ impl<
 
         let page = self.cache.get_or_insert(*page_id, || {
             let p =
-                Arc::new(Page::<_, T, _>::open(&self.pageuse, page_id, deserialize_data).unwrap());
+                Arc::new(Page::<_, T, _>::open(&self.pageuse, page_id, deserialize_data).expect("Pages must be formatted correctly"));
             let b = p.component_pages.len() * PageId::<K>::byte_size();
             (b, p)
         });
@@ -258,10 +256,18 @@ pub trait StoragePage<T: 'static> {
     /// the page is finished with, then the page will not in fact be freed.
     ///
     unsafe fn allow_free(&self);
+
+
+    /// Directly returns a reference to the underlying value. Does not affect the page 
+    /// in any way. Unless there is a ReadRef or ReadArcRef active at the same time, 
+    /// this is likely unsafe.
+    unsafe fn as_ptr(&self) -> *const T;
 }
 
 pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static> {
-    type PageId : 'static + SerializeMinimal<ExternalData<'static> = ()> + DeserializeFromMinimal<ExternalData<'static> = ()>;
+    type PageId: 'static
+        + SerializeMinimal<ExternalData<'static> = ()>
+        + DeserializeFromMinimal<ExternalData<'static> = ()>;
     type Page: StoragePage<Item>;
 
     fn new_page_with(&self, f: impl FnOnce() -> Item) -> Self::PageId;
@@ -276,7 +282,7 @@ pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static>
 
     type SubView: StoreByPage<Item, PageId = Self::PageId, Page = Self::Page>;
 
-    ///Make another page storer which shares the same backing as `self`, but uses 
+    ///Make another page storer which shares the same backing as `self`, but uses
     /// a separate cache and can be flushed seperately.
     fn sub_view(&self) -> Self::SubView;
     fn flush(&self);

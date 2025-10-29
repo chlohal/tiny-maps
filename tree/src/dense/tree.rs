@@ -232,7 +232,7 @@ where
             depth,
             &self.root.root_bbox,
             &mut self.storage,
-            &Default::default(),
+            &Dimension::arbitrary_first(),
         )
     }
 }
@@ -298,7 +298,7 @@ where
         let mut search_stack = VecDeque::from([(
             &self.node,
             self.root_bbox.to_owned(),
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default(),
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first(),
             0,
         )]);
 
@@ -349,7 +349,7 @@ where
         let mut tree = &self.node;
         let mut bbox = self.root_bbox.to_owned();
         let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first();
 
         loop {
             match &tree.left_right_split.get() {
@@ -391,7 +391,7 @@ where
 
         let mut bbox = self.root_bbox.to_owned();
         let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first();
 
         loop {
             match &tree.left_right_split.get() {
@@ -429,7 +429,7 @@ where
     ) {
         let mut tree = &self.node;
         let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first();
 
         //The key should be contained in the root bbox: if not, then we have an issue
         debug_assert!(

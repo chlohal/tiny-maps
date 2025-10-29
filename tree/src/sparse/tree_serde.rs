@@ -9,7 +9,7 @@ use minimal_storage::{
 };
 
 use crate::{
-    sparse::{structure::Inner, tree::split_id},
+    sparse::structure::Inner,
     tree_traits::{
         Dimension, MultidimensionalParent
     },
@@ -84,7 +84,7 @@ where
 
         let node = DeserializeFromMinimal::deserialize_minimal(
             from,
-            (root_bbox.clone(), Default::default()),
+            (root_bbox.clone(), Dimension::arbitrary_first()),
         )?;
 
         Ok(Self { root_bbox, node })

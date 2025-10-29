@@ -1,8 +1,11 @@
 use std::{
+    convert::Infallible,
     fs::File,
     io::{BufWriter, Seek, Write},
     marker::PhantomData,
+    ops::Deref,
     path::PathBuf,
+    sync::Arc,
 };
 
 use btree_vec::{BTreeVec, SeparateStateIteratable};
@@ -21,8 +24,6 @@ use minimal_storage::{
 
 use super::{SparseKey, SparseValue};
 
-
-
 impl<
         const DIMENSION_COUNT: usize,
         const NODE_SATURATION_POINT: usize,
@@ -34,48 +35,71 @@ impl<
 where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
-    Storage:
-        StoreByPage<Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>, PageId = PageId<PAGE_SIZE>>,
-    RootPage:
-        StoragePage<
-            Root<
-                DIMENSION_COUNT,
-                NODE_SATURATION_POINT,
-                Key,
-                Value
-            >,
-        >,
+    Storage: StoreByPage<
+        Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+        PageId = PageId<PAGE_SIZE>,
+    >,
+    RootPage: StoragePage<Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>>,
 {
     pub fn flush<'s>(&'s mut self) -> std::io::Result<()> {
         self.storage.flush();
         Ok(())
     }
-    // pub fn find_items_in_box<'a>(
-    //     &'a self,
-    //     query: &'a Key::Parent,
-    // ) -> impl Iterator<Item = Value> + 'a {
-    //     self.find_entries_in_box(query).map(|x| x.1)
-    // }
+    pub fn find_items_in_box<'a>(
+        &'a self,
+        query: &'a Key::Parent,
+    ) -> impl Iterator<Item = Value> + 'a {
+        self.find_entries_in_box(query).map(|x| x.1)
+    }
 
-    // pub fn find_entries_in_box<'a, 's: 'a>(
-    //     &'s self,
-    //     query: &'a Key::Parent,
-    // ) -> impl Iterator<Item = (Key, Value)> + 'a {
-    //     let mut iterf = StoragePage::read_arc(&self.root).search_all_nodes_touching_area(query);
-    //     std::iter::from_fn(move || {
-    //         iterf.next()
-    //     }).flat_map(move |(node, _bbox)| {
-    //         let page_read = Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
+    pub fn find_entries_in_box<'a, 's: 'a>(
+        &'s self,
+        query: &'a Key::Parent,
+    ) -> impl Iterator<Item = (Key, Value)> + 'a {
+        #[allow(dead_code)]
+        struct FindEntriesInBox<RAII, I> {
+            //safety: the fields MUST be in this order to prevent UB in
+            // the instant that the RAII guard is freed before the inner
+            // field.
+            inner_iter: I,
+            root_page: RAII,
+        }
+        impl<RAII, I: Iterator> Iterator for FindEntriesInBox<RAII, I> {
+            type Item = I::Item;
 
-    //         let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
+            fn next(&mut self) -> Option<Self::Item> {
+                self.inner_iter.next()
+            }
+        }
+        let root_page = StoragePage::read_arc(&self.root);
 
-    //         std::iter::from_fn(move || loop {
-    //             let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
-    //             return Some((k.to_owned(), v.to_owned()));
-    //         })
-    //         .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
-    //     })
-    // }
+        //safety: the RAII guard is stored into the FindEntriesInBox struct, which is in charge of keeping the
+        // guard alive and therefore the validity of the pointer.
+        let inner_iter = unsafe {
+            self.root
+                .as_ptr()
+                .as_ref()
+                .unwrap()
+                .search_all_nodes_touching_area(query)
+        };
+
+        (FindEntriesInBox {
+            inner_iter,
+            root_page,
+        })
+        .filter(|(_, bbox)| bbox.overlaps(query))
+        .flat_map(move |(node, _bbox)| {
+            let page_read = Storage::Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
+
+            let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
+
+            std::iter::from_fn(move || loop {
+                let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
+                return Some((k.to_owned(), v.to_owned()));
+            })
+            .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
+        })
+    }
 
     pub fn root_page_id(&self) -> PageId<PAGE_SIZE> {
         self.root_page_id
@@ -85,7 +109,8 @@ where
         let root = self.root.read();
         let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
 
-        let page: std::sync::Arc<<Storage as StoreByPage<_>>::Page> = self.storage.get(&leaf.page_id, ()).unwrap();
+        let page: std::sync::Arc<<Storage as StoreByPage<_>>::Page> =
+            self.storage.get(&leaf.page_id, ()).unwrap();
 
         let item = page.read().children.get(&query)?.iter().next().cloned();
 
@@ -182,7 +207,12 @@ where
             ref root_bbox,
         } = &mut *root;
 
-        node.expand_to_depth(depth, &root_bbox, &mut self.storage, &Default::default())
+        node.expand_to_depth(
+            depth,
+            &root_bbox,
+            &mut self.storage,
+            &Dimension::arbitrary_first(),
+        )
     }
 }
 
@@ -235,7 +265,7 @@ where
         let mut tree = &self.node;
         let mut bbox = self.root_bbox.to_owned();
         let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first();
 
         loop {
             match &tree.left_right_split.get() {
@@ -277,7 +307,7 @@ where
 
         let mut bbox = self.root_bbox.to_owned();
         let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first();
 
         loop {
             match &tree.left_right_split.get() {
@@ -309,7 +339,7 @@ where
         k: &Key,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<PAGE_SIZE>
+            PageId = PageId<PAGE_SIZE>,
         >,
     ) -> (
         &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
@@ -317,7 +347,7 @@ where
     ) {
         let mut tree = &self.node;
         let mut direction =
-            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::default();
+            <Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum::arbitrary_first();
 
         let mut structure_changed = false;
 
@@ -325,22 +355,10 @@ where
             match tree.left_right_split.get() {
                 Some((ref left, ref right)) => {
                     if k.is_contained_in(&left.bbox) {
-                        if left.bbox == tree.bbox {
-                            panic!(
-                                "More than {NODE_SATURATION_POINT} objects are being stored in one key; either increase the saturation generic, add some wrapper that holds multiple objects, or ensure that keys are different."
-                            );
-                        }
-
                         tree = left;
                         direction = direction.next_axis();
                         continue;
                     } else if k.is_contained_in(&right.bbox) {
-                        if right.bbox == tree.bbox {
-                            panic!(
-                                "More than {NODE_SATURATION_POINT} objects are being stored in one key; either increase the saturation generic, add some wrapper that holds multiple objects, or ensure that keys are different."
-                            );
-                        }
-
                         tree = right;
                         direction = direction.next_axis();
                         continue;
@@ -369,7 +387,7 @@ where
         bbox: Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<PAGE_SIZE>
+            PageId = PageId<PAGE_SIZE>,
         >,
     ) -> Self {
         Self::new_with_children(bbox, storage, BTreeVec::new())
@@ -379,7 +397,7 @@ where
         bbox: Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<PAGE_SIZE>
+            PageId = PageId<PAGE_SIZE>,
         >,
         children: BTreeVec<Key, Value>,
     ) -> Self {
@@ -399,7 +417,7 @@ where
         bbox: &Key::Parent,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<PAGE_SIZE>
+            PageId = PageId<PAGE_SIZE>,
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) {
@@ -420,7 +438,7 @@ where
         &self,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<PAGE_SIZE>
+            PageId = PageId<PAGE_SIZE>,
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
@@ -447,7 +465,7 @@ where
         &self,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
-            PageId = PageId<PAGE_SIZE>
+            PageId = PageId<PAGE_SIZE>,
         >,
         direction: &<Key::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
     ) -> bool {
@@ -471,13 +489,39 @@ where
 
             let children = std::mem::take(&mut inner.children);
 
-            for (child_bbox, item) in children.into_iter() {
-                if child_bbox.is_contained_in(&left_bb) {
-                    left_children.push(child_bbox, item);
-                } else if child_bbox.is_contained_in(&right_bb) {
-                    right_children.push(child_bbox, item);
-                } else {
-                    inner.children.push(child_bbox, item);
+            //this is messy, but the rationale is as such:
+            //if we split our bounding box and nothing changes, then
+            //we've reached the end of whatever finite type the user's using
+            //as a key. In that case, put 25% of the values into the first
+            //(i.e. the left) side and the rest into the last (right) side;
+            //this'll ensure balance-ish over time.
+            if left_bb == right_bb && left_bb == self.bbox {
+                let children_len = children.len();
+                let mut children_iter = children.into_iter();
+
+                let first_amnt = children_len / 4;
+
+                left_children = unsafe {
+                    BTreeVec::from_sorted_iter_failable::<Infallible>(
+                        (&mut children_iter).take(first_amnt).map(Ok),
+                    )
+                    .unwrap()
+                };
+                right_children = unsafe {
+                    BTreeVec::from_sorted_iter_failable::<Infallible>(
+                        children_iter.take(first_amnt).map(Ok),
+                    )
+                    .unwrap()
+                };
+            } else {
+                for (child_bbox, item) in children.into_iter() {
+                    if child_bbox.is_contained_in(&left_bb) {
+                        left_children.push(child_bbox, item);
+                    } else if child_bbox.is_contained_in(&right_bb) {
+                        right_children.push(child_bbox, item);
+                    } else {
+                        inner.children.push(child_bbox, item);
+                    }
                 }
             }
 
@@ -516,8 +560,4 @@ pub fn make_path(root_path: &PathBuf, id: u64) -> PathBuf {
             .join(&id_hex[0..chunk_size])
             .join(&id_hex[chunk_size..])
     }
-}
-
-pub(super) fn split_id(id: u64) -> (u64, u64) {
-    ((id << 1), (id << 1) | 1)
 }

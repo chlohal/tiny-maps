@@ -75,9 +75,10 @@ impl<Key, T> MultidimensionalValue<Key> for T where
 {
 }
 
-pub trait Dimension<const NUM: usize>: Default + Copy {
+pub trait Dimension<const NUM: usize>: Copy {
     fn next_axis(&self) -> Self;
     fn from_index(index: usize) -> Self;
+    fn arbitrary_first() -> Self;
 }
 
 impl Dimension<1> for () {
@@ -86,6 +87,10 @@ impl Dimension<1> for () {
     }
 
     fn from_index(_index: usize) -> Self {
+        ()
+    }
+    
+    fn arbitrary_first() -> Self {
         ()
     }
 }

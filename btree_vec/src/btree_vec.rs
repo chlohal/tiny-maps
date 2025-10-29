@@ -99,13 +99,10 @@ impl<K: Ord + Copy + Debug, V: Debug> BTreeVecNode<K, V> {
         *old_key = (min, max);
     }
     pub fn push(&mut self, key: K, value: V) {
-        if self
-            .keys
-            .last()
-            .is_none_or(|(min, max)| key > *max)
-        {
+        if self.keys.last().is_none_or(|(min, max)| key > *max) {
             self.keys.push((key, key));
-            return self.values
+            return self
+                .values
                 .push(BTreeVecNodeValue::Leaf(NonEmptyUnorderVec::new(value)));
         }
 
@@ -237,10 +234,9 @@ impl<K: Ord + Copy + Debug, V: Debug> BTreeVec<K, V> {
     }
 
     pub unsafe fn from_sorted_iter_failable<E>(
-        len: usize,
         iter: impl Iterator<Item = Result<(K, V), E>>,
     ) -> Result<Self, E> {
-        let itms = deduplicate(iter)?;
+        let (len, itms) = deduplicate(iter)?;
 
         Ok(Self { len, itms })
     }
@@ -258,15 +254,17 @@ impl<K: Ord + Copy + Debug, V: Debug> FromIterator<(K, V)> for BTreeVec<K, V> {
 
 fn deduplicate<K: Ord + Copy, V, E>(
     mut iter: impl Iterator<Item = Result<(K, V), E>>,
-) -> Result<BTreeVecNode<K, V>, E> {
+) -> Result<(usize, BTreeVecNode<K, V>), E> {
     let mut keys = Vec::with_capacity(iter.size_hint().1.unwrap_or_default());
     let mut values = Vec::with_capacity(iter.size_hint().1.unwrap_or_default());
 
     let Some(v) = iter.next() else {
-        return Ok(BTreeVecNode { keys, values });
+        return Ok((0, BTreeVecNode { keys, values }));
     };
     let (k, v) = v?;
     let mut old_key_value = (k, NonEmptyUnorderVec::new(v));
+
+    let mut len = 1;
 
     loop {
         match iter.next() {
@@ -274,10 +272,12 @@ fn deduplicate<K: Ord + Copy, V, E>(
                 keys.push((old_key_value.0, old_key_value.0));
                 values.push(BTreeVecNodeValue::Leaf(old_key_value.1));
 
-                return Ok(BTreeVecNode { keys, values });
+                return Ok((len, BTreeVecNode { keys, values }));
             }
             Some(trier) => {
                 let (new_key, new_value) = trier?;
+
+                len += 1;
 
                 debug_assert!(new_key >= old_key_value.0);
 
@@ -312,7 +312,16 @@ pub trait SeparateStateIteratable {
 
 impl<K: Ord + 'static, V: 'static> BTreeVec<K, V> {
     pub fn begin_range(&self, start: K) -> <Self as SeparateStateIteratable>::State {
-        todo!()
+        let idx = self
+            .itms
+            .keys
+            .iter()
+            .enumerate()
+            .find(|(_, (min, max))| start >= *min)
+            .map(|(i, _)| i)
+            .unwrap_or(self.itms.keys.len());
+
+        vec![idx]
     }
 }
 

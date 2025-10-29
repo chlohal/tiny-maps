@@ -1,32 +1,55 @@
+use std::io::ErrorKind;
+
 use is_final::IterIsFinal;
 
-use crate::{bit_sections::{BitSection, Byte}, serialize_min::{DeserializeFromMinimal, SerializeMinimal}, varint::{from_varint, ToVarint}};
+use crate::{
+    bit_sections::{BitSection, Byte},
+    serialize_min::{DeserializeFromMinimal, SerializeMinimal},
+    varint::{from_varint, ToVarint},
+};
 
+pub mod is_final;
 pub mod latin_lowercase_fivebit;
 pub mod non_remainder_encodings;
-pub mod is_final;
 
 use non_remainder_encodings::{
     read_some_non_remainder_encoding, try_into_some_non_remainder_encoding,
 };
+
+//to be able to serialize strings without asref()-ing them,
+//which also enables serializing containers of them
+impl SerializeMinimal for String {
+    type ExternalData<'s> = <str as SerializeMinimal>::ExternalData<'s>;
+
+    fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
+        &'a self,
+        write_to: &mut W,
+        external_data: Self::ExternalData<'s>,
+    ) -> std::io::Result<()> {
+        self.as_str().minimally_serialize(write_to, external_data)
+    }
+}
 
 /// Format of serialized strings:
 /// Header byte:
 /// XXXN....
 ///     XXX: controlled by the caller, for extra data if needed
 ///     N: variant. If 1, then use Fivebit encoding; if 0 then use another encoding.
-/// 
+///
 /// Fivebit encoding:
-/// XXX1VVVV 
+/// XXX1VVVV
 ///     VVVV: used to encode the remainder, since 5 does not divide evenly into 8
-/// 
+///
 /// Other encoding:
 /// XXX01EEE -- Simple Charset encoding
 ///     EEE: Used to select the charset. For 4-bit charsets; this is typically for identifiers (phone numbers, web addresses, etc)
-/// XXX00111 -- ASCII encoding. Uses varint techniques with the last character having its high bit set
-/// XXX00000 -- UTF-8 Unicode encoding. Encodes byte length + data.
-/// 
-impl SerializeMinimal for &str {
+/// XXX00000 -- Empty string. No bytes follow.
+/// XXX00001 -- ASCII encoding. Uses varint techniques with the last character having its high bit set
+/// XXX00010 -- UTF-8 Unicode encoding. Encodes byte length + data.
+///
+/// XXX00011-XXX00111 are unused.
+///
+impl SerializeMinimal for str {
     type ExternalData<'a> = BitSection<0, 3, u8>;
 
     fn minimally_serialize<'a, 's: 'a, W: std::io::Write>(
@@ -37,6 +60,13 @@ impl SerializeMinimal for &str {
         let value: &str = self.as_ref();
 
         let mut header = Byte::from(0u8 | extra_info_nibble.into_inner_masked());
+
+        if value.is_empty() {
+            //empty string! no further bytes needed past the header
+            let header = header.into_inner() | 0b000;
+
+            return write_to.write_all(&[header]);
+        } 
 
         if let Some((nibble, bytes)) = try_into_some_non_remainder_encoding(value) {
             header.set_bit(4, true);
@@ -58,7 +88,7 @@ impl SerializeMinimal for &str {
         }
 
         if value.is_ascii() {
-            let header = header.into_inner() | 0b111;
+            let header = header.into_inner() | 0b001;
 
             write_to.write_all(&[header])?;
 
@@ -71,12 +101,15 @@ impl SerializeMinimal for &str {
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
             );
+        } else {
+            //UTF-8 fallback.
+            let header = header.into_inner() | 0b010;
+
+            write_to.write_all(&[header])?;
+
+            value.as_bytes().len().write_varint(write_to)?;
+            return write_to.write_all(value.as_bytes());
         }
-
-        write_to.write_all(&[header.into_inner()])?;
-
-        value.as_bytes().len().write_varint(write_to)?;
-        write_to.write_all(value.as_bytes())
     }
 }
 
@@ -87,29 +120,38 @@ impl DeserializeFromMinimal for String {
         from: &'a mut R,
         external_data: Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-         let header = match external_data {
+        let header = match external_data {
             Some(b) => b,
             None => {
                 let mut b = [0];
                 from.read_exact(&mut b)?;
                 b[0]
-            },
+            }
         };
 
         //4th bit set -> fivebit encoding
         if (header >> 4) & 1 == 1 {
             let fivebit_nibble = header & 0b1111;
-            return latin_lowercase_fivebit::latin_lowercase_fivebit_to_string(fivebit_nibble, from);
+            return latin_lowercase_fivebit::latin_lowercase_fivebit_to_string(
+                fivebit_nibble,
+                from,
+            );
         }
 
         //4th not set; 5th bit set -> non_remainder encoding
         if (header >> 3) & 1 == 1 {
             let non_remainder_nibble = header & 0b111;
-            return read_some_non_remainder_encoding(non_remainder_nibble.into(), from)
+            return read_some_non_remainder_encoding(non_remainder_nibble.into(), from);
         }
 
-        //lowest 3 bits set -> ASCII
-        let is_ascii = header & 0b111 == 0b111;
+        //lowest 3 bits empty -> empty string
+        let is_empty = header & 0b111 == 0b000;
+        if is_empty {
+            return Ok(String::new());
+        }
+
+        //lowest 3 bits set to 0b001 -> ASCII
+        let is_ascii = header & 0b111 == 0b001;
 
         if is_ascii {
             let mut s = String::new();
@@ -126,16 +168,21 @@ impl DeserializeFromMinimal for String {
                     break;
                 }
             }
-            return Ok(s)
+            return Ok(s);
         }
 
-        
-        //unicode
-        let len = from_varint::<usize>(from)?;
-        let mut buf = Vec::with_capacity(len);
-        from.read_exact(&mut buf[0..len])?;
+        //lowest 3 bits set to 0b010 -> UTF-8 unicode
+        let is_utf8 = header & 0b111 == 0b010;
+        if is_utf8 {
+            let len = from_varint::<usize>(from)?;
+            let mut buf = vec![0u8; len];
+            from.read_exact(&mut buf[0..len])?;
 
-        return String::from_utf8(buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+            return String::from_utf8(buf)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+        }
+
+        //none of the proper encodings triggered; therefore, complain
+        return Err(ErrorKind::InvalidData.into())
     }
 }

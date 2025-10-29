@@ -9,7 +9,7 @@
         31: [space]
 */
 
-use std::io::{Error, Read};
+use std::io::{Error, ErrorKind, Read};
 
 use crate::{bit_sections::LowNibble, serialize_min::ReadExtReadOne};
 
@@ -29,6 +29,8 @@ const LEN_REM_ONLY_0_NIBBLE: u8 = 0b0001;
 const LEN_REM_0_NIBBLE: u8 = 0b0000;
 const LEN_REM_ONLY_1_NIBBLE: u8 = 0b0101;
 const LEN_REM_1_NIBBLE: u8 = 0b0100;
+
+//Bottom two bits on these may be overwritten.
 const LEN_REM_ONLY_2_NIBBLE: u8 = 0b1100;
 const LEN_REM_2_NIBBLE: u8 = 0b1000;
 
@@ -45,53 +47,39 @@ pub fn latin_lowercase_fivebit_to_string(
     if header_nibble == LEN_REM_ONLY_1_NIBBLE {
         let byte = bytes.read_one()?;
 
-        return String::from_utf8(vec![char_from_latin_lowercase(byte)])
-            .map_err(|x| Error::new(std::io::ErrorKind::InvalidData, x));
+        return Ok(String::from(char_from_latin_lowercase(byte)?))
     }
 
     if (header_nibble & LEN_REM_ONLY_2_NIBBLE) == LEN_REM_ONLY_2_NIBBLE {
         let a = bytes.read_one()?;
 
-        let a_char = (header_nibble & 0b11) << 3 | (a >> 5);
-        let b_char = a & 0b1_1111;
+        let a_char = char_from_latin_lowercase((header_nibble & 0b11) << 3 | (a >> 5))?;
+        let b_char = char_from_latin_lowercase(a & 0b1_1111)?;
 
-        return String::from_utf8(vec![
-            char_from_latin_lowercase(a_char),
-            char_from_latin_lowercase(b_char),
-        ])
-        .map_err(|x| Error::new(std::io::ErrorKind::InvalidData, x));
+        return Ok([a_char, b_char].into_iter().collect());
     }
 
     //read all the triples into a string
-    let mut str = bytes
-        .reading_iterator()
-        .pair_chunk()
-        .map_until_finished(|(a, b)| {
+    let mut str = String::new();
 
-            let a = match a {
-                Ok(a) => a,
-                Err(e) => return Final(Err(e)),
-            };
+    loop {
+        let b1 = bytes.read_one()?;
+        let b2 = bytes.read_one()?;
 
-            let b = match b {
-                Ok(b) => b,
-                Err(e) => return Final(Err(e)),
-            };
+        let section = (b1 as u16) << 8 | b2 as u16;
 
-            let section = (a as u16) << 8 | b as u16;
+        let a = char_from_latin_lowercase((section >> 11) as u8)?;
+        let b = char_from_latin_lowercase(((section >> 6) & 0b11111) as u8)?;
+        let c = char_from_latin_lowercase(((section >> 1) & 0b11111) as u8)?;
 
-            let a = char_from_latin_lowercase((section >> 11) as u8) as char;
-            let b = char_from_latin_lowercase(((section >> 6) & 0b11111) as u8) as char;
-            let c = char_from_latin_lowercase(((section >> 1) & 0b11111) as u8) as char;
+        str.push(a);
+        str.push(b);
+        str.push(c);
 
-            if section & 0b1 == 0 {
-                return NonFinal(Ok([a, b, c]));
-            } else {
-                return Final(Ok([a, b, c]));
-            }
-        })
-        .try_flatten()
-        .collect::<std::io::Result<String>>()?;
+        if section & 0b1 == 1 {
+            break;
+        }
+    }
 
     //read the remainder
 
@@ -104,15 +92,17 @@ pub fn latin_lowercase_fivebit_to_string(
         return Ok(str);
     }
 
-    assert!(header_nibble == LEN_REM_2_NIBBLE);
+    //just the 2 MSBs of each nibble must match; the
+    // lowest bits can be whatever they want
+    assert!(header_nibble >> 2 == LEN_REM_2_NIBBLE >> 2);
 
     let a = bytes.read_one()?;
 
-    let a_char = (header_nibble & 0b11) << 3 | (a >> 5);
-    let b_char = a & 0b1_1111;
+    let a_char = char_from_latin_lowercase((header_nibble & 0b11) << 3 | (a >> 5))?;
+    let b_char = char_from_latin_lowercase(a & 0b1_1111)?;
 
-    str.push(a_char as char);
-    str.push(b_char as char);
+    str.push(a_char);
+    str.push(b_char);
 
     Ok(str)
 }
@@ -188,14 +178,15 @@ fn char_to_latin_lowercase(b: u8) -> u8 {
     }
 }
 
-fn char_from_latin_lowercase(b: u8) -> u8 {
-    match b {
+fn char_from_latin_lowercase(b: u8) -> std::io::Result<char> {
+    Ok(match b {
+        0..=25 => b'a' + b,
         26 => b':',
         27 => b'_',
         28 => b'-',
         29 => b'/',
         30 => b'.',
         31 => b' ',
-        b => b'a' + b,
-    }
+        _ => return Err(ErrorKind::InvalidData.into()),
+    } as char)
 }

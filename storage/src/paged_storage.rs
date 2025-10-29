@@ -529,6 +529,10 @@ where
         self.freeable
             .store(true, std::sync::atomic::Ordering::Release);
     }
+
+    unsafe fn as_ptr(&self) -> *const T {
+        self.item.data_ptr()
+    }
 }
 
 impl<const K: usize, T, File: Filelike> Page<K, T, File>

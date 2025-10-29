@@ -103,7 +103,7 @@ where
 
         let children: std::io::Result<
             BTreeVec<<Key as MultidimensionalKey<DIMENSION_COUNT>>::DeltaFromParent, Value>,
-        > = unsafe { BTreeVec::from_sorted_iter_failable(child_len, children_sorted_deque) };
+        > = unsafe { BTreeVec::from_sorted_iter_failable(children_sorted_deque) };
         let children = children?;
 
         Ok(Self { children })
@@ -127,7 +127,7 @@ where
 
         let node = DeserializeFromMinimal::deserialize_minimal(
             from,
-            (external_data, 1, root_bbox.clone(), Default::default()),
+            (external_data, 1, root_bbox.clone(), Dimension::arbitrary_first()),
         )?;
 
         Ok(Self { root_bbox, node })
