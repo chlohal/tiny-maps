@@ -139,6 +139,10 @@ impl<const K: usize> PageId<K> {
         Self(inner)
     }
 
+    pub unsafe fn from_index(i: std::num::NonZero<usize>) -> Self {
+        Self(i.get())
+    }
+
     pub(super) fn byte_offset(&self) -> u64 {
         (self.0 * K * THOUSAND) as u64
     }
