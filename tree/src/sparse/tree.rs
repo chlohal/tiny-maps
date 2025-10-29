@@ -105,7 +105,7 @@ where
         self.root_page_id
     }
 
-    pub fn get<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
+    pub fn get_owned<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
         let root = self.root.read();
         let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
 
@@ -115,6 +115,45 @@ where
         let item = page.read().children.get(&query)?.iter().next().cloned();
 
         item
+    }
+
+    pub fn get_readref<'a, 'b>(&'a self, query: &'b Key) -> Option<impl AsRef<Value> + 'a> {
+        let root = self.root.read();
+        let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
+
+        struct MappedArcReadRef<'raii, RAII, I> {
+            //safety: the fields MUST be in this order to prevent UB in
+            // the instant that the RAII guard is freed before the inner
+            // field.
+            inner: &'raii I,
+            raii_guard: RAII,
+        }
+        impl<RAII, I> AsRef<I> for MappedArcReadRef<'_, RAII, I> {
+            fn as_ref(&self) -> &I {
+                self.inner
+            }
+        }
+
+        let page: std::sync::Arc<<Storage as StoreByPage<_>>::Page> =
+            self.storage.get(&leaf.page_id, ()).unwrap();
+
+        let raii_guard = <Storage as StoreByPage<_>>::Page::read_arc(&page);
+
+        //safety: see MappedArcReadRef's commend
+        let item = unsafe {
+            page.as_ptr()
+                .as_ref()
+                .expect("Pointer must be valid")
+                .children
+                .get(&query)?
+                .iter()
+                .next()?
+        };
+
+        Some(MappedArcReadRef::<'a, _, _> {
+            inner: item,
+            raii_guard,
+        })
     }
 
     ///
@@ -133,7 +172,7 @@ where
         mut iter: impl Iterator<Item = Key> + 'a,
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
         return iter.filter_map(|x| {
-            let value = self.get(&x)?;
+            let value = self.get_owned(&x)?;
             Some((x, value))
         });
 
