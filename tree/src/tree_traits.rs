@@ -163,6 +163,6 @@ macro_rules! impl_float_num_traits {
     };
 }
 
-impl_num_traits! {u8, i8, u16, i16, u32, i32, u64, i64, u128, i128}
+impl_num_traits! {u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, usize, isize}
 
 impl_float_num_traits! {f32, f64}
