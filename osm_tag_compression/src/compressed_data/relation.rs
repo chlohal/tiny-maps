@@ -11,7 +11,7 @@ use super::{CompressedOsmData, Fields};
 pub fn osm_relation_to_compressed_node<const C: usize>(mut relation: Relation, bbox_cache: &StoredBinaryTree<C, u64, BoundingBox<i32>>) -> Result<CompressedOsmData, OsmObj> {
     let bbox: Option<BoundingBox<i32>> = relation.refs.iter().map(|r| {
         let id = flattened_id(&r.member);
-        bbox_cache.get(&id)
+        bbox_cache.get_owned(&id)
     }).collect();
 
     let Some(bbox) = bbox else {

@@ -20,7 +20,7 @@ pub fn osm_way_to_compressed_node<const C: usize>(
     let bbox: Option<BoundingBox<i32>> = way
         .nodes
         .iter()
-        .map(|node| bbox_cache.get(&flattened_id(&OsmId::Node(*node))))
+        .map(|node| bbox_cache.get_owned(&flattened_id(&OsmId::Node(*node))))
         .map(|x| {
             if let Some(x) = x {
                 children.push((*x.x(), *x.y()));
