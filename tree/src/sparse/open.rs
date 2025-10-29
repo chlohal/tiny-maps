@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, path::PathBuf};
+use std::{marker::PhantomData, num::NonZero, path::PathBuf};
 
 use minimal_storage::{
     multitype_paged_storage::{MultitypePagedStorage, SingleTypeView, StoragePage, StoreByPage},
@@ -42,7 +42,11 @@ pub fn open_file<
 
     let storage = MultitypePagedStorage::open(storage_file);
 
-    open_storage(bbox, &storage, Some(PageId::new(1)))
+    //safety: the file is either new or MUST have been opened with this same function before.
+    //    In the first case, the root gets put in the first free page, which is 1.
+    //    In the second case, the storage will have been new before.
+    // Therefore by induction, the ID is always 1 and therefore this is safe.
+    open_storage(bbox, &storage, Some(unsafe { PageId::from_index(NonZero::new(1).unwrap()) }))
 }
 
 pub fn open_storage<
