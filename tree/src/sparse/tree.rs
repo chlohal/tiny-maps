@@ -12,8 +12,7 @@ use btree_vec::{BTreeVec, SeparateStateIteratable};
 use debug_logs::debug_print;
 
 use crate::{
-    sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage},
-    PAGE_SIZE,
+    sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage}, tree_traits::MultidimensionalQuery, PAGE_SIZE
 };
 
 use crate::tree_traits::{Dimension, MultidimensionalParent};
@@ -52,9 +51,9 @@ where
         self.find_entries_in_box(query).map(|x| x.1)
     }
 
-    pub fn find_entries_in_box<'a, 's: 'a>(
+    pub fn find_entries_in_query<'a, 's: 'a>(
         &'s self,
-        query: &'a Key::Parent,
+        query: &'a impl MultidimensionalQuery<DIMENSION_COUNT, Key>,
     ) -> impl Iterator<Item = (Key, Value)> + 'a {
         #[allow(dead_code)]
         struct FindEntriesInBox<RAII, I> {
@@ -80,25 +79,33 @@ where
                 .as_ptr()
                 .as_ref()
                 .unwrap()
-                .search_all_nodes_touching_area(query)
+                .search_all_nodes_touching_area(query.bounding_box())
         };
 
         (FindEntriesInBox {
             inner_iter,
             root_page,
         })
-        .filter(|(_, bbox)| bbox.overlaps(query))
+        .filter(|(_, bbox)| query.overlaps_box(bbox))
         .flat_map(move |(node, _bbox)| {
             let page_read = Storage::Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
 
-            let mut iter_state = page_read.children.begin_range(Key::smallest_key_in(query));
+            let mut iter_state = page_read.children.begin_iteration();
 
             std::iter::from_fn(move || loop {
                 let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
                 return Some((k.to_owned(), v.to_owned()));
             })
+            .filter(|(k, _)| query.contains_item(&k) )
             .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
         })
+    }
+
+    pub fn find_entries_in_box<'a, 's: 'a>(
+        &'s self,
+        query: &'a Key::Parent,
+    ) -> impl Iterator<Item = (Key, Value)> + 'a {
+        self.find_entries_in_query(query)
     }
 
     pub fn root_page_id(&self) -> PageId<PAGE_SIZE> {
@@ -263,14 +270,14 @@ where
 {
     fn search_all_nodes_touching_area<'a>(
         &'a self,
-        area: &'a Key::Parent,
+        area: Key::Parent,
     ) -> impl Iterator<
         Item = (
             &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
             Key::Parent,
         ),
     > + 'a {
-        let mut search_stack = vec![self.search_smallest_node_covering_area(area)];
+        let mut search_stack = vec![self.search_smallest_node_covering_area(&area)];
 
         std::iter::from_fn(move || {
             let (parent, bbox, direction) = search_stack.pop()?;

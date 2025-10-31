@@ -11,7 +11,7 @@ use minimal_storage::{
     varint::ToVarint,
     StorageReachable,
 };
-
+use crate::tree_traits::MinValue;
 use crate::{
     dense::{
         structure::{ExternalChildrenCount, Inner},
@@ -42,7 +42,7 @@ where
             return Ok(());
         }
 
-        let mut last_bbox = <Key::DeltaFromParent as Zero>::zero();
+        let mut last_bbox = <Key::DeltaFromParent as MinValue>::MIN;
 
         let mut actual_count = 0;
 
@@ -86,7 +86,7 @@ where
 
         debug_assert_eq!(child_len, child_len_check);
 
-        let mut last_bbox = Key::DeltaFromParent::zero();
+        let mut last_bbox = Key::DeltaFromParent::MIN;
 
         let children_sorted_deque = (0..child_len).map(|_| {
             let delt_delt_bbox = Key::DeltaFromSelfAsChild::deserialize_minimal(from, ())?;

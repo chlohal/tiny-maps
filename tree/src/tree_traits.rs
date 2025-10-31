@@ -1,6 +1,33 @@
 use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use std::fmt::Debug;
 
+pub trait MultidimensionalQuery<const DIMENSION_COUNT: usize, Key>
+where Key: MultidimensionalKey<DIMENSION_COUNT> {
+    fn bounding_box(&self) -> Key::Parent;
+    fn overlaps_box(&self, bbox: &Key::Parent) -> bool;
+    fn overlaps_self(&self, shape: &Self) -> bool;
+
+    fn contains_item(&self, item: &Key) -> bool;
+}
+
+impl<const DIMENSION_COUNT: usize, K: MultidimensionalKey<DIMENSION_COUNT>> MultidimensionalQuery<DIMENSION_COUNT, K> for K::Parent {
+    fn bounding_box(&self) -> K::Parent {
+        self.to_owned()
+    }
+
+    fn overlaps_box(&self, bbox: &K::Parent) -> bool {
+        self.overlaps(bbox)
+    }
+
+    fn overlaps_self(&self, shape: &Self) -> bool {
+        self.overlaps(shape)
+    }
+
+    fn contains_item(&self, item: &K) -> bool {
+        item.is_contained_in(self)
+    }
+}
+
 pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
     Sized
     + Clone
@@ -10,6 +37,8 @@ pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
     + Debug
 {
     type DimensionEnum: Dimension<DIMENSION_COUNT>;
+
+    const UNIVERSE: Self;
 
     fn contains(&self, child: &Self) -> bool;
     fn overlaps(&self, child: &Self) -> bool;
@@ -21,10 +50,10 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
 {
     type Parent: MultidimensionalParent<DIMENSION_COUNT>;
 
-    type DeltaFromParent: Ord + Zero + Copy + Clone + Debug;
+    type DeltaFromParent: Ord + MinValue + Copy + Clone + Debug;
     type DeltaFromSelfAsChild: SerializeMinimal<ExternalData<'static> = ()>
         + DeserializeFromMinimal<ExternalData<'static> = ()>
-        + Zero
+        + MinValue
         + Debug;
 
     fn is_contained_in(&self, parent: &Self::Parent) -> bool;
@@ -96,11 +125,19 @@ impl Dimension<1> for () {
 }
 
 pub trait Zero {
-    fn zero() -> Self;
+    const ZERO: Self;
 }
 
 pub trait Average: Sized {
     fn avg(a: &Self, b: &Self) -> Self;
+}
+
+pub trait MinValue {
+    const MIN: Self;
+}
+
+pub trait MaxValue {
+    const MAX: Self;
 }
 
 pub trait AbsDiff {
@@ -118,13 +155,27 @@ macro_rules! impl_num_traits {
             }
         }
         impl Zero for $typ {
-            #[inline]
-            fn zero() -> Self {
-                0
-            }
+            const ZERO: Self = 0;
+        }
+        impl MaxValue for $typ {
+            const MAX: Self = $typ::MAX;
+        }
+        impl MinValue for $typ {
+            const MIN: Self = $typ::MIN;
         }
     )*
     };
+}
+
+impl Average for bool {
+    #[inline]
+    fn avg(a: &Self, b: &Self) -> Self {
+        *a & *b
+    }
+}
+
+impl Zero for bool {
+    const ZERO: Self = false;
 }
 
 impl AbsDiff for i32 {
@@ -145,10 +196,7 @@ macro_rules! impl_float_num_traits {
             }
         }
         impl Zero for $typ {
-            #[inline]
-            fn zero() -> Self {
-                0.
-            }
+            const ZERO: Self = 0.;
         }
 
         impl AbsDiff for $typ {

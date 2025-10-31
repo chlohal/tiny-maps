@@ -27,7 +27,7 @@ pub fn test() {
     t.flush().unwrap();
 
     for i in 0..high {
-        let stored_i = t.get(&i).unwrap();
+        let stored_i = t.get_owned(&i).unwrap();
 
         assert_eq!(i, stored_i);
     }

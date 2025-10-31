@@ -11,7 +11,7 @@ use minimal_storage::{
     varint::{from_varint, FromVarint, ToVarint},
 };
 
-use crate::tree_traits::AbsDiff;
+use crate::tree_traits::{AbsDiff, MinValue};
 
 use super::tree_traits::{Average, Dimension, MultidimensionalKey, MultidimensionalParent, Zero};
 
@@ -97,7 +97,7 @@ impl<T: PartialOrd> BoundingBox<T> {
     pub const fn y_end(&self) -> &T {
         &self.y_end
     }
-    
+
     pub fn set_y(&mut self, y: T) {
         debug_assert!(y <= self.y_end);
         self.y = y;
@@ -437,6 +437,13 @@ impl BoundingBox<i32> {
 impl MultidimensionalParent<2> for BoundingBox<i32> {
     type DimensionEnum = LongLatSplitDirection;
 
+    const UNIVERSE: Self = BoundingBox {
+        x: i32::MIN,
+        y: i32::MIN,
+        x_end: i32::MAX,
+        y_end: i32::MAX,
+    };
+
     fn contains(&self, child: &Self) -> bool {
         self.contains(child)
     }
@@ -501,14 +508,12 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
     }
 }
 
-impl Zero for DeltaBoundingBox32 {
-    fn zero() -> Self {
-        Self {
-            xy: 0,
-            width: 0,
-            height: 0,
-        }
-    }
+impl MinValue for DeltaBoundingBox32 {
+    const MIN: Self = Self {
+        xy: 0,
+        width: 0,
+        height: 0,
+    };
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -577,10 +582,8 @@ impl DeltaBoundingBox32 {
 #[derive(Debug, PartialEq)]
 pub struct DeltaFriendlyU32Offset(u64, u32, u32);
 
-impl Zero for DeltaFriendlyU32Offset {
-    fn zero() -> Self {
-        Self(0, 0, 0)
-    }
+impl MinValue for DeltaFriendlyU32Offset {
+    const MIN: Self = Self(0, 0, 0);
 }
 
 impl SerializeMinimal for DeltaFriendlyU32Offset {
@@ -666,11 +669,10 @@ impl Dimension<2> for LongLatSplitDirection {
             _ => unreachable!(),
         }
     }
-    
+
     fn arbitrary_first() -> Self {
         LongLatSplitDirection::Lat
     }
-    
 }
 
 #[cfg(test)]

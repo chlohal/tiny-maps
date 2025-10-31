@@ -11,7 +11,7 @@ use minimal_storage::{
     varint::{FromVarint, ToVarint},
 };
 
-use crate::{sparse::{structure::{Root, Inner}, SparseKey, SparseValue}, PAGE_SIZE};
+use crate::{sparse::{structure::{Inner, Root}, SparseKey, SparseValue}, tree_traits::{MaxValue, MinValue}, PAGE_SIZE};
 
 use super::tree_traits::{Average, MultidimensionalKey, MultidimensionalParent, Zero};
 
@@ -115,6 +115,8 @@ pub trait OneDimensionalCoord:
     + Add<Output = Self>
     + Sub<Output = Self>
     + std::fmt::Debug
+    + MinValue 
+    + MaxValue
 {
 }
 
@@ -129,13 +131,17 @@ impl<
             + FromVarint
             + Add<Output = T>
             + Sub<Output = T>
-            + std::fmt::Debug,
+            + std::fmt::Debug
+            + MinValue
+            + MaxValue,
     > OneDimensionalCoord for T
 {
 }
 
 impl<T: OneDimensionalCoord> MultidimensionalParent<1> for RangeInclusive<T> {
     type DimensionEnum = ();
+
+    const UNIVERSE: Self = T::MIN..=T::MAX;
 
     fn contains(&self, child: &Self) -> bool {
         self.start() <= child.start() && child.end() <= self.end()
