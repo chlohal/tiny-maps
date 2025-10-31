@@ -110,8 +110,8 @@ pub trait OneDimensionalCoord:
     + Copy
     + Zero
     + Ord
-    + ToVarint
-    + FromVarint
+    + for<'a> SerializeMinimal<ExternalData<'a> = ()>
+    + for<'a> DeserializeFromMinimal<ExternalData<'a> = ()>
     + Add<Output = Self>
     + Sub<Output = Self>
     + std::fmt::Debug
@@ -127,8 +127,8 @@ impl<
             + Copy
             + Zero
             + Ord
-            + ToVarint
-            + FromVarint
+            + for<'a> SerializeMinimal<ExternalData<'a> = ()>
+            + for<'a> DeserializeFromMinimal<ExternalData<'a> = ()>
             + Add<Output = T>
             + Sub<Output = T>
             + std::fmt::Debug
