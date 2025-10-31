@@ -79,7 +79,7 @@ where
                 .as_ptr()
                 .as_ref()
                 .unwrap()
-                .search_all_nodes_touching_area(query.bounding_box())
+                .search_all_nodes_touching_area(query)
         };
 
         (FindEntriesInBox {
@@ -270,14 +270,14 @@ where
 {
     fn search_all_nodes_touching_area<'a>(
         &'a self,
-        area: Key::Parent,
+        area: &'a impl MultidimensionalQuery<DIMENSION_COUNT, Key>,
     ) -> impl Iterator<
         Item = (
-            &Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
+            &'a Node<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
             Key::Parent,
         ),
     > + 'a {
-        let mut search_stack = vec![self.search_smallest_node_covering_area(&area)];
+        let mut search_stack = vec![self.search_smallest_node_covering_area(&area.bounding_box())];
 
         std::iter::from_fn(move || {
             let (parent, bbox, direction) = search_stack.pop()?;
@@ -287,9 +287,9 @@ where
                     let (left_bbox_calculated, right_bbox_calculated) =
                         bbox.split_evenly_on_dimension(&direction);
 
-                    if left_bbox_calculated.overlaps(&area) {
+                    if area.overlaps_box(&left_bbox_calculated) {
                         search_stack.push((left, left_bbox_calculated, direction.next_axis()));
-                    } else if right_bbox_calculated.overlaps(&area) {
+                    } else if area.overlaps_box(&right_bbox_calculated) {
                         search_stack.push((right, right_bbox_calculated, direction.next_axis()));
                     }
                 }
