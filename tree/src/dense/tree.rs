@@ -418,8 +418,8 @@ where
         }
     }
 
-    fn get_key_leaf_splitting_if_needed<'a>(
-        &'a self,
+    fn get_key_leaf_splitting_if_needed(
+        &self,
         k: &Key,
         storage: &TreePagedStorage<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
     ) -> (

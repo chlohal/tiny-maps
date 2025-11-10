@@ -1,4 +1,10 @@
-use std::{path::PathBuf, sync::{atomic::Ordering::{AcqRel, Acquire}, OnceLock}};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::Ordering::{AcqRel, Acquire},
+        OnceLock,
+    },
+};
 
 use btree_vec::BTreeVec;
 use minimal_storage::{
@@ -10,9 +16,7 @@ use minimal_storage::{
 
 use crate::{
     sparse::structure::Inner,
-    tree_traits::{
-        Dimension, MultidimensionalParent
-    },
+    tree_traits::{Dimension, MultidimensionalParent},
 };
 
 use super::{SparseKey, SparseValue};
@@ -72,7 +76,7 @@ impl<const DIMENSION_COUNT: usize, const NODE_SATURATION_POINT: usize, Key, Valu
     for crate::sparse::structure::Root<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>
 where
     Key: SparseKey<DIMENSION_COUNT>,
-    Value: SparseValue
+    Value: SparseValue,
 {
     type ExternalData<'d> = ();
 
@@ -128,24 +132,25 @@ where
         from: &'a mut R,
         (parent, direction): Self::ExternalData<'d>,
     ) -> Result<Self, std::io::Error> {
-        let has_split = u8::deserialize_minimal(from, ())? == b'y';
-        let page_id = PageId::deserialize_minimal(from, ())?;
+        let field_existence = u8::deserialize_minimal(from, ())?;
+        let has_page_id = (field_existence & 0b10) != 0;
+        let has_split = (field_existence & 0b1) != 0;
+
         let child_count = usize::deserialize_minimal(from, ())?.into();
 
-        let left_right_split = if has_split {
+        let page_id = if has_page_id {
+            OnceLock::from(PageId::deserialize_minimal(from, ())?)
+        } else {
+            OnceLock::new()
+        };
 
+        let left_right_split = if has_split {
             let (left_bbox, right_bbox) = parent.split_evenly_on_dimension(&direction);
             let next_dir = direction.next_axis();
 
             OnceLock::from((
-                Box::new(Self::deserialize_minimal(
-                    from,
-                    (left_bbox, next_dir),
-                )?),
-                Box::new(Self::deserialize_minimal(
-                    from,
-                    (right_bbox, next_dir),
-                )?),
+                Box::new(Self::deserialize_minimal(from, (left_bbox, next_dir))?),
+                Box::new(Self::deserialize_minimal(from, (right_bbox, next_dir))?),
             ))
         } else {
             OnceLock::new()
@@ -174,20 +179,23 @@ where
         write_to: &mut W,
         external_data: Self::ExternalData<'s>,
     ) -> std::io::Result<()> {
-        match &self.left_right_split.get() {
-            Some((l, r)) => {
-                (b'y').minimally_serialize(write_to, ())?;
-                self.page_id.minimally_serialize(write_to, ())?;
-                self.child_count.load(Acquire).minimally_serialize(write_to, ())?;
+        let (page_id, lr) = (&self.page_id.get(), &self.left_right_split.get());
 
-                l.minimally_serialize(write_to, external_data)?;
-                r.minimally_serialize(write_to, external_data)?;
-            }
-            None => {
-                (b'n').minimally_serialize(write_to, ())?;
-                self.page_id.minimally_serialize(write_to, ())?;
-                self.child_count.load(Acquire).minimally_serialize(write_to, ())?;
-            }
+        //storing the existence of whichever fields exist
+        (((page_id.is_some() as u8) << 1) | (lr.is_some() as u8))
+            .minimally_serialize(write_to, ())?;
+
+        self.child_count
+            .load(Acquire)
+            .minimally_serialize(write_to, ())?;
+
+        if let Some(page_id) = page_id {
+            page_id.minimally_serialize(write_to, ())?;
+        }
+
+        if let Some((l, r)) = lr {
+            l.minimally_serialize(write_to, external_data)?;
+            r.minimally_serialize(write_to, external_data)?;
         }
 
         Ok(())

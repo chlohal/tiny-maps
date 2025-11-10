@@ -151,7 +151,7 @@ macro_rules! impl_num_traits {
         impl Average for $typ {
             #[inline]
             fn avg(a: &Self, b: &Self) -> Self {
-                *a / 2 + *b / 2
+                (a&b) + ((a^b) >> 1)
             }
         }
         impl Zero for $typ {
@@ -184,6 +184,14 @@ impl AbsDiff for i32 {
     fn abs_diff(a: &Self, b: &Self) -> Self::Diff {
         a.abs_diff(*b)
     }
+}
+
+impl MinValue for bool {
+    const MIN: Self = false;
+}
+
+impl MaxValue for bool {
+    const MAX: Self = true;
 }
 
 macro_rules! impl_float_num_traits {

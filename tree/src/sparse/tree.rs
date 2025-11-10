@@ -5,14 +5,16 @@ use std::{
     marker::PhantomData,
     ops::Deref,
     path::PathBuf,
-    sync::Arc,
+    sync::{atomic::Ordering, Arc, OnceLock},
 };
 
 use btree_vec::{BTreeVec, SeparateStateIteratable};
 use debug_logs::debug_print;
 
 use crate::{
-    sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage}, tree_traits::MultidimensionalQuery, PAGE_SIZE
+    sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage},
+    tree_traits::MultidimensionalQuery,
+    PAGE_SIZE,
 };
 
 use crate::tree_traits::{Dimension, MultidimensionalParent};
@@ -87,18 +89,22 @@ where
             root_page,
         })
         .filter(|(_, bbox)| query.overlaps_box(bbox))
-        .flat_map(move |(node, _bbox)| {
-            let page_read = Storage::Page::read_arc(&self.storage.get(&node.page_id, ()).unwrap());
+        .filter_map(move |(node, _bbox)| {
+            let page_read =
+                Storage::Page::read_arc(&self.storage.get(node.page_id.get()?, ()).unwrap());
 
             let mut iter_state = page_read.children.begin_iteration();
 
-            std::iter::from_fn(move || loop {
-                let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
-                return Some((k.to_owned(), v.to_owned()));
-            })
-            .filter(|(k, _)| query.contains_item(&k) )
-            .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v)))
+            Some(
+                std::iter::from_fn(move || loop {
+                    let (k, v) = page_read.children.stateless_next(&mut iter_state)?;
+                    return Some((k.to_owned(), v.to_owned()));
+                })
+                .filter(|(k, _)| query.contains_item(&k))
+                .flat_map(|(k, vs)| vs.into_iter().map(move |v| (k.clone(), v))),
+            )
         })
+        .flatten()
     }
 
     pub fn find_entries_in_box<'a, 's: 'a>(
@@ -117,7 +123,7 @@ where
         let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
 
         let page: std::sync::Arc<<Storage as StoreByPage<_>>::Page> =
-            self.storage.get(&leaf.page_id, ()).unwrap();
+            self.storage.get(leaf.page_id.get()?, ()).unwrap();
 
         let item = page.read().children.get(&query)?.iter().next().cloned();
 
@@ -142,11 +148,11 @@ where
         }
 
         let page: std::sync::Arc<<Storage as StoreByPage<_>>::Page> =
-            self.storage.get(&leaf.page_id, ()).unwrap();
+            self.storage.get(leaf.page_id.get()?, ()).unwrap();
 
         let raii_guard = <Storage as StoreByPage<_>>::Page::read_arc(&page);
 
-        //safety: see MappedArcReadRef's commend
+        //safety: see MappedArcReadRef's comment
         let item = unsafe {
             page.as_ptr()
                 .as_ref()
@@ -182,42 +188,6 @@ where
             let value = self.get_owned(&x)?;
             Some((x, value))
         });
-
-        let mut query = iter.next().unwrap();
-        let (Node { page_id, .. }, _leaf_bbox) = self.root.read().search_leaf_for_key(&query);
-
-        let mut page_is_exact = true;
-        let mut page = self.storage.get(&page_id, ()).unwrap();
-
-        std::iter::from_fn(move || {
-            loop {
-                let page_lock = page.read();
-                let children = &page_lock.children;
-
-                let Some(column) = children.get(&query) else {
-                    if page_is_exact {
-                        //if it wasn't found using the exact correct page, then it wouldn't be anywhere else either.
-                        query = iter.next()?;
-                        page_is_exact = false;
-                        continue;
-                    } else {
-                        //if it wasn't found, but the page was inexact, then get the exact page and try again.
-                        drop(page_lock);
-                        page_is_exact = true;
-                        let rr = self.root.read();
-                        let (Node { page_id, .. }, _leaf_bbox) = rr.search_leaf_for_key(&query);
-                        page = self.storage.get(&page_id, ()).unwrap();
-                        continue;
-                    }
-                };
-
-                query = iter.next()?;
-                page_is_exact = false;
-
-                let value = column.front().to_owned();
-                return Some((query.to_owned(), value));
-            }
-        });
     }
 
     pub fn insert(&self, k: Key, item: Value) {
@@ -229,7 +199,13 @@ where
 
         debug_print!("got leaf");
 
-        let page = self.storage.get(&leaf.page_id, ()).unwrap();
+        let page_id = leaf.page_id.get_or_init(|| {
+            self.storage.new_page(Inner {
+                children: BTreeVec::new(),
+            })
+        });
+
+        let page = self.storage.get(&page_id, ()).unwrap();
         let mut child = page.write();
 
         debug_print!("got page");
@@ -287,10 +263,24 @@ where
                     let (left_bbox_calculated, right_bbox_calculated) =
                         bbox.split_evenly_on_dimension(&direction);
 
-                    if area.overlaps_box(&left_bbox_calculated) {
-                        search_stack.push((left, left_bbox_calculated, direction.next_axis()));
-                    } else if area.overlaps_box(&right_bbox_calculated) {
-                        search_stack.push((right, right_bbox_calculated, direction.next_axis()));
+                    //if the rounding limits are reached, then all bets are off and both nodes touch the area.
+                    let rounding_limits_reached =
+                        left_bbox_calculated == bbox || right_bbox_calculated == bbox;
+
+                    if rounding_limits_reached {
+                        search_stack.push((left, bbox.clone(), direction.next_axis()));
+                        search_stack.push((right, bbox.clone(), direction.next_axis()));
+                    } else {
+                        if area.overlaps_box(&left_bbox_calculated) {
+                            search_stack.push((left, left_bbox_calculated, direction.next_axis()));
+                        }
+                        if area.overlaps_box(&right_bbox_calculated) {
+                            search_stack.push((
+                                right,
+                                right_bbox_calculated,
+                                direction.next_axis(),
+                            ));
+                        }
                     }
                 }
                 None => {}
@@ -319,16 +309,23 @@ where
                     let (left_bbox_calculated, right_bbox_calculated) =
                         bbox.split_evenly_on_dimension(&direction);
 
-                    if left_bbox_calculated.contains(&area) {
-                        tree = left;
-                        bbox = left_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
-                    } else if right_bbox_calculated.contains(&area) {
-                        tree = right;
-                        bbox = right_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
+                    // if we've reached the rounding limit of the bounding-box type, then don't
+                    // continue recursing; that would unduly limit the search area.
+                    let rounding_limit_reached =
+                        left_bbox_calculated == bbox || right_bbox_calculated == bbox;
+
+                    if !rounding_limit_reached {
+                        if left_bbox_calculated.contains(&area) {
+                            tree = left;
+                            bbox = left_bbox_calculated;
+                            direction = direction.next_axis();
+                            continue;
+                        } else if right_bbox_calculated.contains(&area) {
+                            tree = right;
+                            bbox = right_bbox_calculated;
+                            direction = direction.next_axis();
+                            continue;
+                        }
                     }
                 }
                 None => {}
@@ -342,6 +339,11 @@ where
     /// whose Parent type is equivalent to itself), this may not be a leaf! However,
     /// if the key is stored anywhere in the tree, then it's guaranteed that it will be
     /// in the returned node.
+    ///
+    /// This is suitable for uses which return a single value,
+    /// or determine whether there is at least one value stored at a key. It is **NOT SUITABLE**
+    /// for returning _all_ values stored at a key if the user is storing more than NODE_SATURATION_POINT
+    /// values in a single key, since it assumes that all values in a key are stored in one node.
     fn search_leaf_for_key<'a>(
         &'a self,
         k: &Key,
@@ -380,8 +382,12 @@ where
         }
     }
 
-    fn get_key_leaf_splitting_if_needed<'a>(
-        &'a self,
+    /// Suitable for finding a leaf to insert a value into at the given key.
+    /// NOT SUITABLE for `get` operations. Name is also slightly misleading; it
+    /// might not be a leaf if the given key covers a large space, or if the tree is
+    /// currently bottom-heavy.
+    fn get_key_leaf_splitting_if_needed(
+        &self,
         k: &Key,
         storage: &impl StoreByPage<
             Inner<DIMENSION_COUNT, NODE_SATURATION_POINT, Key, Value>,
@@ -449,10 +455,18 @@ where
     ) -> Self {
         debug_print!("new_with_children called");
 
+        let child_count = children.len().into();
+
+        let page_id = if children.len() > 0 {
+            OnceLock::from(storage.new_page(Inner { children }))
+        } else {
+            OnceLock::new()
+        };
+
         Self {
             bbox: bbox.clone(),
-            child_count: children.len().into(),
-            page_id: storage.new_page(Inner { children }),
+            child_count,
+            page_id,
             left_right_split: Default::default(),
             __phantom: std::marker::PhantomData,
         }
@@ -494,14 +508,9 @@ where
 
         debug_print!("try_split_left_right starting, passed the first oncelock check");
 
-        let page = storage.get(&self.page_id, ()).unwrap();
-        let inner = page.read();
-
         debug_print!("got page");
 
-        if inner.children.len() >= NODE_SATURATION_POINT {
-            drop(inner);
-
+        if self.child_count.load(Ordering::Acquire) >= NODE_SATURATION_POINT {
             return self.split_left_right_unchecked(storage, direction);
         } else {
             return false;
@@ -517,15 +526,19 @@ where
     ) -> bool {
         debug_print!("split_left_right_unchecked");
 
+        let Some(page_id) = self.page_id.get() else {
+            return false;
+        };
+
         self.left_right_split.get_or_init(|| {
             debug_print!("made it to the inside of the cell init");
 
-            let (left_bb, right_bb) = self.bbox.split_evenly_on_dimension(direction);
+            let (mut left_bb, mut right_bb) = self.bbox.split_evenly_on_dimension(direction);
 
             let mut left_children = BTreeVec::new();
             let mut right_children = BTreeVec::new();
 
-            let page = storage.get(&self.page_id, ()).unwrap();
+            let page = storage.get(&page_id, ()).unwrap();
 
             debug_print!("got page");
 
@@ -541,24 +554,33 @@ where
             //as a key. In that case, put 25% of the values into the first
             //(i.e. the left) side and the rest into the last (right) side;
             //this'll ensure balance-ish over time.
-            if left_bb == right_bb && left_bb == self.bbox {
+            if left_bb == self.bbox || right_bb == self.bbox {
+                //if rounding errors made one side different from the other, then
+                //we could be putting values into a box which doesn't actually hold
+                //them. Correct the issue by setting both sides to the parent.
+                left_bb = self.bbox.clone();
+                right_bb = self.bbox.clone();
+
+                debug_assert_eq!(left_bb, right_bb);
+
                 let children_len = children.len();
                 let mut children_iter = children.into_iter();
 
                 let first_amnt = children_len / 4;
 
-                left_children = unsafe {
-                    BTreeVec::from_sorted_iter_failable::<Infallible>(
-                        (&mut children_iter).take(first_amnt).map(Ok),
-                    )
-                    .unwrap()
-                };
-                right_children = unsafe {
-                    BTreeVec::from_sorted_iter_failable::<Infallible>(
-                        children_iter.take(first_amnt).map(Ok),
-                    )
-                    .unwrap()
-                };
+                for _ in 0..first_amnt {
+                    let Some((key, value)) = children_iter.next() else {
+                        break;
+                    };
+                    left_children.push(key, value);
+                }
+
+                for (key, value) in children_iter {
+                    right_children.push(key, value);
+                }
+
+                //ensure we've correctly stored everything
+                debug_assert_eq!(right_children.len() + left_children.len(), children_len);
             } else {
                 for (child_bbox, item) in children.into_iter() {
                     if child_bbox.is_contained_in(&left_bb) {

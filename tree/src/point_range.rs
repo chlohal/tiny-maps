@@ -154,7 +154,7 @@ impl<T: OneDimensionalCoord> MultidimensionalParent<1> for RangeInclusive<T> {
         i_start < i_end
     }
 
-    fn split_evenly_on_dimension(&self, _dimension: &()) -> (Self, Self) {
+    fn split_evenly_on_dimension(&self, _: &()) -> (Self, Self) {
         let middle = Average::avg(self.start(), self.end());
 
         ((*self.start())..=middle, middle..=(*self.end()))

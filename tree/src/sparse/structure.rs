@@ -72,7 +72,7 @@ where
     Key: SparseKey<DIMENSION_COUNT>,
     Value: SparseValue,
 {
-    pub(super) page_id: PageId<PAGE_SIZE>,
+    pub(super) page_id: OnceLock<PageId<PAGE_SIZE>>,
     pub(super) bbox: Key::Parent,
     pub(super) child_count: AtomicUsize,
     pub(super) left_right_split: OnceLock<(

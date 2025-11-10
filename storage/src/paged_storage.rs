@@ -504,6 +504,8 @@ where
     }
 
     fn write_arc(self: &Arc<Self>) -> Self::WriteArcRef {
+        self.freeable
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         unsafe {
             self.item.raw().lock_exclusive();
             //safety: holds lock!

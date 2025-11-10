@@ -663,7 +663,7 @@ impl Dimension<2> for LongLatSplitDirection {
     }
 
     fn from_index(index: usize) -> Self {
-        match (index & 1) {
+        match index & 1 {
             0 => LongLatSplitDirection::Lat,
             1 => LongLatSplitDirection::Long,
             _ => unreachable!(),

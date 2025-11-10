@@ -164,10 +164,15 @@ impl<K: Ord + Copy + Debug, V: Debug> BTreeVecNode<K, V> {
         }
 
         for (i, (min, max)) in keys.iter().enumerate() {
-            if key < min {
+            //if the key is some compound type which takes a while to compare, 
+            //then this'll take 2 comparisons down to 1. If it's a cheap or 
+            //intrinsic comparison, then inlining should take care of 
+            let min_cmp = key.cmp(min);
+
+            if min_cmp == std::cmp::Ordering::Less {
                 return Err(i);
             }
-            if key == min || key <= max {
+            if min_cmp == std::cmp::Ordering::Equal || key <= max {
                 return Ok(i);
             }
         }
