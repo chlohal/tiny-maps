@@ -3,7 +3,7 @@ use std::{
     fs::File,
     io::{BufWriter, Seek, Write},
     marker::PhantomData,
-    ops::Deref,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     sync::{atomic::Ordering, Arc, OnceLock},
 };
@@ -13,7 +13,7 @@ use debug_logs::debug_print;
 
 use crate::{
     sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage},
-    tree_traits::MultidimensionalQuery,
+    tree_traits::{MultidimensionalKey, MultidimensionalQuery, MultidimensionalValue},
     PAGE_SIZE,
 };
 
@@ -118,6 +118,79 @@ where
         self.root_page_id
     }
 
+    pub fn condense(&mut self) {
+        self.free_all_empty();
+        self.condense_all_pages();
+        self.storage.truncate_unused();
+        self.remove_all_unused_leaves();
+    }
+
+    fn remove_all_unused_leaves(&mut self) {
+        let mut root = self.root.as_ref().write();
+
+        fn unstack<const D: usize, const N: usize, Key: SparseKey<D>, Value: SparseValue>(n: &mut Node<D, N, Key, Value>) {
+            if let Some((l,r)) = n.left_right_split.get_mut() {
+                unstack(l);
+                unstack(r);
+
+                if l.left_right_split.get_mut().is_none() && n.page_id.get_mut().is_none() {
+                    n.left_right_split.take();
+                }
+            }
+        }
+
+        unstack(&mut root.node);
+    }
+
+    fn condense_all_pages(&mut self) {
+        let mut root = self.root.as_ref().write();
+
+        let mut stack = vec![&mut root.node];
+
+        while let Some(node) = stack.pop() {
+            if let Some(pg) = node.page_id.get_mut() {
+                *pg = self.storage.condense(&*pg).unwrap_or(*pg);
+            }
+
+            if let Some((left, right)) = node.left_right_split.get_mut() {
+                stack.push(left);
+                stack.push(right);
+            }
+        }
+    }
+
+    fn free_all_empty(&mut self) {
+        let mut root = self.root.as_ref().write();
+
+        let mut stack = vec![&mut root.node];
+
+        while let Some(node) = stack.pop() {
+            if let Some(pg) = node.page_id.get_mut() {
+                if let Some(page) = self.storage.get(&*pg, ()) {
+                    let len = page.read().children.len();
+                    if len == 0 {
+                        node.page_id.take();
+                        unsafe {
+                            //safety:
+                            // - no other borrows to this tree (method takes mutable), and
+                            //   therefore no other concurrent references to the page's ID.
+                            //   There MAY be other references to the page, but the page
+                            //   wouldn't be flushed until they're gone anyway.
+                            // - we don't care about the data stored in this.
+                            // - no other use of the page_id (it's owned by this node)
+                            page.force_free();
+                        }
+                    }
+                }
+            }
+
+            if let Some((left, right)) = node.left_right_split.get_mut() {
+                stack.push(left);
+                stack.push(right);
+            }
+        }
+    }
+
     pub fn get_owned<'a, 'b>(&'a self, query: &'b Key) -> Option<Value> {
         let root = self.root.read();
         let (leaf, _leaf_bbox) = root.search_leaf_for_key(query);
@@ -211,7 +284,7 @@ where
         debug_print!("got page");
 
         leaf.child_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 
         child.children.push(k, item);
 
@@ -595,10 +668,8 @@ where
 
             debug_print!("made new splits");
 
-            //Relaxed is appropriate because this code holds a write lock on the corresponding page, so it cannot be modified
-            //by any other thread at the same time.
             self.child_count
-                .store(inner.children.len(), std::sync::atomic::Ordering::Relaxed);
+                .store(inner.children.len(), std::sync::atomic::Ordering::Release);
 
             drop(inner);
 

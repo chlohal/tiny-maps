@@ -1,12 +1,8 @@
 use std::{
-    cmp::min,
-    io::{self, BufReader, BufWriter, Read, Write},
-    ops::{Deref, DerefMut},
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
+    cmp::min, collections::BinaryHeap, io::{self, BufReader, BufWriter, Read, Write}, ops::{Deref, DerefMut}, sync::{
+        atomic::{AtomicBool, AtomicU8, AtomicUsize},
         Arc, Mutex,
-    },
-    thread::panicking,
+    }, thread::panicking
 };
 
 use debug_logs::debug_print;
@@ -28,7 +24,7 @@ use crate::{
 use super::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct PageId<const PAGE_SIZE: usize>(usize);
+pub struct PageId<const PAGE_SIZE: usize>(pub(super) usize);
 
 impl<const K: usize> DeserializeFromMinimal for PageId<K> {
     type ExternalData<'d> = ();
@@ -185,14 +181,14 @@ where
 #[derive(Debug)]
 pub(super) struct PageUse<const PAGE_SIZE_K: usize, File: Filelike> {
     pub(super) lowest_unallocated_id: usize,
-    pub(super) freed_pages: Vec<PageId<PAGE_SIZE_K>>,
+    pub(super) freed_pages: BinaryHeap<std::cmp::Reverse<PageId<PAGE_SIZE_K>>>,
     pub(super) file: File,
 }
 
 impl<const K: usize, File: Filelike> PageUse<K, File> {
     pub fn alloc_new(&mut self) -> PageId<K> {
         if let Some(p) = self.freed_pages.pop() {
-            return p;
+            return p.0;
         }
 
         let file = &mut self.file;
@@ -216,6 +212,21 @@ impl<const K: usize, File: Filelike> PageUse<K, File> {
         file.write_all(&[0; PAGE_HEADER_SIZE]).unwrap();
 
         id
+    }
+
+    pub fn truncate_unused(&mut self) {
+        let mut max_truncatable = self.lowest_unallocated_id;
+        let mut freed_max = BinaryHeap::from_iter(self.freed_pages.iter().map(|x| x.0));
+
+        while let Some(next_largest_freed_page) = freed_max.pop() {
+            if next_largest_freed_page.0 + 1 == max_truncatable {
+                max_truncatable = next_largest_freed_page.0;
+            } else {
+                break;
+            }
+        }
+
+        self.file.set_len(PageId::<K>(max_truncatable).byte_offset()).unwrap();
     }
 
     pub fn alloc_new_after(&mut self, old_page: PageId<K>) -> PageId<K> {
@@ -244,7 +255,7 @@ impl<const K: usize, File: Filelike> PageUse<K, File> {
                 .as_valid()
         };
 
-        self.freed_pages.push(free);
+        self.freed_pages.push(std::cmp::Reverse(free));
 
         if let Some(prev) = previous_page {
             self.file
@@ -294,7 +305,7 @@ where
                     pageuse: Arc::clone(&self.pageuse),
                     item: RwLock::new(item),
                     dirty: true.into(),
-                    freeable: false.into(),
+                    free_state: 0.into(),
                     component_pages: vec![id],
                 }),
             )
@@ -317,6 +328,59 @@ where
             let len = p.component_pages.len() * PageId::<K>::byte_size();
             (len, p)
         }))
+    }
+
+    fn truncate_unused(&mut self) {
+        self.pageuse.lock().unwrap().truncate_unused();
+    }
+
+    fn condense(&mut self, page_id: &Self::PageId) -> Option<Self::PageId> {
+        //the locking requirements are fulfilled by the fact that this is a 
+        // mutable borrow. If the page is being used, then None.
+        if self.cache.exists(page_id) {
+            return None;
+        }
+
+        let mut pageuse = self.pageuse.lock().unwrap();
+
+        let new_page = pageuse.alloc_new();
+
+        //if we couldn't allocate a lower number, then bail
+        if new_page.0 >= page_id.0 {
+            pageuse.free_page(new_page);
+            return Some(*page_id);
+        }
+
+        let mut p_read = BufReader::new(PageReader::<K, true, File> {
+            file: &mut pageuse.file,
+            page_ids_acc: vec![*page_id],
+            current_page_id: *page_id,
+            current_page_read_amount: 0,
+        });
+
+        let mut buffer = Vec::<u8>::new();
+
+        p_read.read_to_end(&mut buffer).unwrap();
+
+        for old_page_id in p_read.into_inner().page_ids_acc {
+            pageuse.free_page(old_page_id);
+        }
+
+        let pages_to_write = [new_page];
+        let mut p_write = BufWriter::new(PageWriter {
+            storage: &mut pageuse,
+            added_pages: vec![],
+            state: WriterState::Begin {
+                to_write: &pages_to_write,
+            },
+        });
+
+        p_write.write_all(&buffer[..]).unwrap();
+        drop(p_write);
+
+        drop(pageuse);
+
+        Some(new_page)        
     }
 
     fn flush(&self) {
@@ -353,7 +417,7 @@ where
 
         let pageuse = PageUse {
             lowest_unallocated_id,
-            freed_pages: Vec::new(),
+            freed_pages: BinaryHeap::new(),
             file,
         };
 
@@ -372,7 +436,10 @@ where
 {
     pub(super) item: RwLock<T>,
     pub(super) dirty: AtomicBool,
-    pub(super) freeable: AtomicBool,
+    ///
+    /// LSB: free if not dirty.
+    /// 2nd LSB: always free
+    pub(super) free_state: AtomicU8,
     pub(super) component_pages: Vec<PageId<PAGE_SIZE_K>>,
 
     pub(super) pageuse: Arc<Mutex<PageUse<PAGE_SIZE_K, File>>>,
@@ -385,7 +452,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Page")
             .field("dirty", &self.dirty)
-            .field("freeable", &self.freeable)
+            .field("freeable", &self.free_state)
             .field("component_pages", &self.component_pages)
             .field("pageuse", &self.pageuse)
             .finish()
@@ -504,10 +571,16 @@ where
     }
 
     fn write_arc(self: &Arc<Self>) -> Self::WriteArcRef {
-        self.freeable
-            .store(false, std::sync::atomic::Ordering::Relaxed);
         unsafe {
             self.item.raw().lock_exclusive();
+
+            self.dirty.fetch_or(true, std::sync::atomic::Ordering::AcqRel);
+
+            //Write a 0 to the first bit of the free_state, indicating that if there 
+            //was a light free in place, we shouldn't do it.
+            self.free_state
+                .fetch_and(!1, std::sync::atomic::Ordering::AcqRel);
+
             //safety: holds lock!
             PageArcWriteLock {
                 rwlock: Arc::clone(self),
@@ -517,9 +590,13 @@ where
 
     fn write<'a>(&'a self) -> Self::WriteRef<'a> {
         let w = self.item.write();
-        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
-        self.freeable
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        
+        self.dirty.fetch_or(true, std::sync::atomic::Ordering::AcqRel);
+
+        //Write a 0 to the first bit of the free_state, indicating that if there 
+        //was a light free in place, we shouldn't do it.
+        self.free_state
+            .fetch_and(!1, std::sync::atomic::Ordering::AcqRel);
 
         w
     }
@@ -532,9 +609,15 @@ where
     /// the page is finished with, then the page will not in fact be freed.
     ///
     unsafe fn allow_free(&self) {
-        self.freeable
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.free_state
+            .fetch_or(0b01, std::sync::atomic::Ordering::Release);
     }
+
+    unsafe fn force_free(&self) {
+        self.free_state
+            .fetch_or(0b10, std::sync::atomic::Ordering::Release);
+    }
+    
 
     unsafe fn as_ptr(&self) -> *const T {
         self.item.data_ptr()
@@ -570,7 +653,7 @@ where
             pageuse: Arc::clone(pageuse),
             item: RwLock::new(item),
             dirty: false.into(),
-            freeable: false.into(),
+            free_state: 0.into(),
             component_pages: reader.page_ids_acc,
         })
     }
@@ -580,10 +663,20 @@ where
     /// Page may not be loaded from disk before this method has completed.
     ///
     unsafe fn flush<'a>(&mut self) -> std::io::Result<()> {
-        if *self.dirty.get_mut() {
-            let allowed_to_free_first_page = *self.freeable.get_mut();
+        let free_state = *self.free_state.get_mut();
+
+        if *self.dirty.get_mut() || free_state != 0 {
+            let allowed_to_free_first_page = free_state != 0;
+            let skip_serializing_always_free = (free_state & 0b10) != 0;
 
             let mut storage = self.pageuse.lock().unwrap();
+
+            if skip_serializing_always_free {
+                for page_to_free in self.component_pages.iter() {
+                    storage.free_page(*page_to_free);
+                }
+                return Ok(());
+            }
 
             let mut writer = BufWriter::new(PageWriter {
                 storage: storage.deref_mut(),
@@ -658,7 +751,7 @@ pub(super) fn read_page_header<const K: usize>(
 }
 
 #[derive(Debug)]
-enum WriterState<'a, const PAGE_SIZE_K: usize> {
+pub(super) enum WriterState<'a, const PAGE_SIZE_K: usize> {
     Begin {
         to_write: &'a [PageId<PAGE_SIZE_K>],
     },
@@ -693,10 +786,10 @@ impl<'a, const K: usize> WriterState<'a, K> {
 }
 
 #[derive(Debug)]
-struct PageWriter<'a, const PAGE_SIZE_K: usize, File: Filelike> {
-    storage: &'a mut PageUse<PAGE_SIZE_K, File>,
-    added_pages: Vec<PageId<PAGE_SIZE_K>>,
-    state: WriterState<'a, PAGE_SIZE_K>,
+pub(super) struct PageWriter<'a, const PAGE_SIZE_K: usize, File: Filelike> {
+    pub(super) storage: &'a mut PageUse<PAGE_SIZE_K, File>,
+    pub(super) added_pages: Vec<PageId<PAGE_SIZE_K>>,
+    pub(super) state: WriterState<'a, PAGE_SIZE_K>,
 }
 
 impl<'a, const K: usize, File: Filelike> Write for PageWriter<'a, K, File> {
@@ -773,12 +866,12 @@ fn slice_pop<'a, 'b, T>(slice: &'a mut &'b [T]) -> Option<&'b T> {
     Some(head)
 }
 
-struct PageReader<'a, const PAGE_SIZE_K: usize, const BUILD_COMPONENT_ID_LIST: bool, File: Filelike>
+pub(super) struct PageReader<'a, const PAGE_SIZE_K: usize, const BUILD_COMPONENT_ID_LIST: bool, File: Filelike>
 {
-    file: &'a mut File,
-    page_ids_acc: Vec<PageId<PAGE_SIZE_K>>,
-    current_page_id: PageId<PAGE_SIZE_K>,
-    current_page_read_amount: usize,
+    pub(super) file: &'a mut File,
+    pub(super) page_ids_acc: Vec<PageId<PAGE_SIZE_K>>,
+    pub(super) current_page_id: PageId<PAGE_SIZE_K>,
+    pub(super) current_page_read_amount: usize,
 }
 
 impl<'a, const K: usize, const B: bool, F: Filelike> Read for PageReader<'a, K, B, F> {

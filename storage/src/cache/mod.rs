@@ -17,7 +17,7 @@ where
     Value: ?Sized,
     Key: Ord + Copy,
 {
-    cache: Arc<RwLock<BTreeMap<Key, OnceLock<(usize, Arc<Value>)>>>>,
+    cache: RwLock<BTreeMap<Key, OnceLock<(usize, Arc<Value>)>>>,
     cached_bytes: AtomicUsize,
     max_bytes: usize,
 }
@@ -33,6 +33,14 @@ where
             cached_bytes: 0.into(),
             max_bytes,
         }
+    }
+
+    /// This only assures something's existence (or nonexistence!) 
+    /// at the time that the function is called. Take care that `Cache`
+    /// is designed to be very parallel, and as such this may not be  
+    /// usable for long unless external locking is applied.
+    pub fn exists(&mut self, id: &K) -> bool {
+        self.cache.get_mut().contains_key(&id)
     }
 
     pub fn get_or_insert(&self, id: K, f: impl FnOnce() -> (usize, Arc<V>)) -> Arc<V> {

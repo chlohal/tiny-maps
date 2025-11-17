@@ -1,14 +1,8 @@
 use std::{
-    any::Any,
-    cmp::min,
-    io::{self, BufReader, BufWriter, Read, Write},
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    sync::{
+    any::Any, cmp::min, collections::BinaryHeap, io::{self, BufReader, BufWriter, Read, Write}, marker::PhantomData, ops::{Deref, DerefMut}, sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc, Mutex,
-    },
-    thread::panicking,
+    }, thread::panicking
 };
 
 use debug_logs::debug_print;
@@ -18,7 +12,7 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use crate::{
     cache::Cache,
     paged_storage::{
-        Page, PageId, PageUse, PagedStorage, ALLOWED_CACHE_PHYSICAL_PAGES, PAGE_HEADER_SIZE,
+        Page, PageId, PageReader, PageUse, PageWriter, PagedStorage, WriterState, ALLOWED_CACHE_PHYSICAL_PAGES, PAGE_HEADER_SIZE
     },
     pooled_storage::Filelike,
     serialize_min::{DeserializeFromMinimal, SerializeMinimal},
@@ -47,7 +41,7 @@ impl<const K: usize, File: Filelike + 'static> MultitypePagedStorage<K, File> {
 
         let pageuse = PageUse {
             lowest_unallocated_id,
-            freed_pages: Vec::new(),
+            freed_pages: BinaryHeap::new(),
             file,
         };
 
@@ -110,7 +104,7 @@ impl<
                     pageuse: Arc::clone(&self.pageuse),
                     item: RwLock::new(item),
                     dirty: true.into(),
-                    freeable: false.into(),
+                    free_state: 0.into(),
                     component_pages: vec![id],
                 }),
             )
@@ -145,8 +139,61 @@ impl<
         self.single_type_view()
     }
 
+    fn truncate_unused(&mut self) {
+        self.pageuse.lock().unwrap().truncate_unused();
+    }
+
     fn flush(&self) {
         self.cache.evict_all_possible();
+    }
+    
+    fn condense(&mut self, page_id: &Self::PageId) -> Option<Self::PageId> {
+        //the locking requirements are fulfilled by the fact that this is a 
+        // mutable borrow. If the page is being used, then None.
+        if self.cache.exists(page_id) {
+            return None;
+        }
+
+        let mut pageuse = self.pageuse.lock().unwrap();
+
+        let new_page = pageuse.alloc_new();
+
+        //if we couldn't allocate a lower number, then bail
+        if new_page.0 >= page_id.0 {
+            pageuse.free_page(new_page);
+            return Some(*page_id);
+        }
+
+        let mut p_read = BufReader::new(PageReader::<K, true, File> {
+            file: &mut pageuse.file,
+            page_ids_acc: vec![*page_id],
+            current_page_id: *page_id,
+            current_page_read_amount: 0,
+        });
+
+        let mut buffer = Vec::<u8>::new();
+
+        p_read.read_to_end(&mut buffer).unwrap();
+
+        for old_page_id in p_read.into_inner().page_ids_acc {
+            pageuse.free_page(old_page_id);
+        }
+
+        let pages_to_write = [new_page];
+        let mut p_write = BufWriter::new(PageWriter {
+            storage: &mut pageuse,
+            added_pages: vec![],
+            state: WriterState::Begin {
+                to_write: &pages_to_write,
+            },
+        });
+
+        p_write.write_all(&buffer[..]).unwrap();
+        drop(p_write);
+
+        drop(pageuse);
+
+        Some(new_page)
     }
 }
 
@@ -190,7 +237,7 @@ impl<
                     pageuse: Arc::clone(&self.pageuse),
                     item: RwLock::new(item),
                     dirty: true.into(),
-                    freeable: false.into(),
+                    free_state: 0.into(),
                     component_pages: vec![id],
                 }),
             )
@@ -257,6 +304,13 @@ pub trait StoragePage<T: 'static> {
     ///
     unsafe fn allow_free(&self);
 
+    /// Similar to `allow_free`, with the distinction that NO ATTEMPT will be made to 
+    /// serialize the underlying data. Any modifications after this method is called
+    /// will not be respected nor saved. After this is called, the Page _should_ be 
+    /// dropped as soon as possible.
+    /// 
+    unsafe fn force_free(&self);
+
 
     /// Directly returns a reference to the underlying value. Does not affect the page 
     /// in any way. Unless there is a ReadRef or ReadArcRef active at the same time, 
@@ -286,4 +340,22 @@ pub trait StoreByPage<Item: SerializeMinimal + DeserializeFromMinimal + 'static>
     /// a separate cache and can be flushed seperately.
     fn sub_view(&self) -> Self::SubView;
     fn flush(&self);
+
+    /// Move the data in a given page_id to a lower one, if possible. 
+    /// Returns the new page_id, or None if the page cannot be moved.
+    /// If the page _can_ be moved, but there's no lower available page_id,
+    /// then it will return the same page_id.
+    /// 
+    /// This will always return None if the given page is currently being 
+    /// observed somewhere else.
+    fn condense(&mut self, page_id: &Self::PageId) -> Option<Self::PageId> {
+        let _ = page_id;
+        None
+    }
+
+    /// Attempt to truncate the underlying storage, getting rid
+    /// of any unused space.
+    fn truncate_unused(&mut self) {
+
+    }
 }

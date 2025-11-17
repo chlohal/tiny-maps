@@ -5,7 +5,6 @@ pub trait MultidimensionalQuery<const DIMENSION_COUNT: usize, Key>
 where Key: MultidimensionalKey<DIMENSION_COUNT> {
     fn bounding_box(&self) -> Key::Parent;
     fn overlaps_box(&self, bbox: &Key::Parent) -> bool;
-    fn overlaps_self(&self, shape: &Self) -> bool;
 
     fn contains_item(&self, item: &Key) -> bool;
 }
@@ -17,10 +16,6 @@ impl<const DIMENSION_COUNT: usize, K: MultidimensionalKey<DIMENSION_COUNT>> Mult
 
     fn overlaps_box(&self, bbox: &K::Parent) -> bool {
         self.overlaps(bbox)
-    }
-
-    fn overlaps_self(&self, shape: &Self) -> bool {
-        self.overlaps(shape)
     }
 
     fn contains_item(&self, item: &K) -> bool {
