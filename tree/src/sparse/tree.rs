@@ -90,6 +90,7 @@ where
         })
         .filter(|(_, bbox)| query.overlaps_box(bbox))
         .filter_map(move |(node, _bbox)| {
+
             let page_read =
                 Storage::Page::read_arc(&self.storage.get(node.page_id.get()?, ()).unwrap());
 
@@ -128,12 +129,14 @@ where
     fn remove_all_unused_leaves(&mut self) {
         let mut root = self.root.as_ref().write();
 
-        fn unstack<const D: usize, const N: usize, Key: SparseKey<D>, Value: SparseValue>(n: &mut Node<D, N, Key, Value>) {
-            if let Some((l,r)) = n.left_right_split.get_mut() {
+        fn unstack<const D: usize, const N: usize, Key: SparseKey<D>, Value: SparseValue>(
+            n: &mut Node<D, N, Key, Value>,
+        ) {
+            if let Some((l, r)) = n.left_right_split.get_mut() {
                 unstack(l);
                 unstack(r);
 
-                if l.left_right_split.get_mut().is_none() && n.page_id.get_mut().is_none() {
+                if n.left_right_split.get_mut().is_none() && n.page_id.get_mut().is_none() {
                     n.left_right_split.take();
                 }
             }
@@ -386,6 +389,9 @@ where
                     // continue recursing; that would unduly limit the search area.
                     let rounding_limit_reached =
                         left_bbox_calculated == bbox || right_bbox_calculated == bbox;
+
+                    debug_assert_eq!(left_bbox_calculated, left.bbox);
+                    debug_assert_eq!(right_bbox_calculated, right.bbox);
 
                     if !rounding_limit_reached {
                         if left_bbox_calculated.contains(&area) {
