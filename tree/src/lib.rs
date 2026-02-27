@@ -49,7 +49,5 @@ where
     Key: SparseKey<D>,
     Value: SparseValue,
 {
-    std::fs::create_dir_all(&state_path).unwrap();
-
     sparse::open_file(global_area, state_path)
 }

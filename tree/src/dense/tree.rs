@@ -14,6 +14,7 @@ use btree_vec::{BTreeVec, SeparateStateIteratable};
 
 use crate::{
     dense::structure::{Inner, Node, Root, StoredTree, TreePagedStorage},
+    tree_traits::SplitDirection,
     PAGE_SIZE,
 };
 
@@ -353,22 +354,21 @@ where
 
         loop {
             match &tree.left_right_split.get() {
-                Some((left, right)) => {
-                    let (left_bbox_calculated, right_bbox_calculated) =
-                        bbox.split_evenly_on_dimension(&direction);
-
-                    if left_bbox_calculated.contains(&area) {
+                Some((left, right)) => match bbox.split_enclosed_in_side(&direction, &area) {
+                    (SplitDirection::Left, child_bbox) => {
                         tree = left;
-                        bbox = left_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
-                    } else if right_bbox_calculated.contains(&area) {
-                        tree = right;
-                        bbox = right_bbox_calculated;
+                        bbox = child_bbox;
                         direction = direction.next_axis();
                         continue;
                     }
-                }
+                    (SplitDirection::Right, child_bbox) => {
+                        tree = right;
+                        bbox = child_bbox;
+                        direction = direction.next_axis();
+                        continue;
+                    }
+                    (SplitDirection::Split, _) => {}
+                },
                 None => {}
             }
 
@@ -396,19 +396,20 @@ where
         loop {
             match &tree.left_right_split.get() {
                 Some((left, right)) => {
-                    let (left_bbox_calculated, right_bbox_calculated) =
-                        bbox.split_evenly_on_dimension(&direction);
-
-                    if k.is_contained_in(&left_bbox_calculated) {
-                        tree = left;
-                        bbox = left_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
-                    } else if k.is_contained_in(&right_bbox_calculated) {
-                        tree = right;
-                        bbox = right_bbox_calculated;
-                        direction = direction.next_axis();
-                        continue;
+                    match k.parent_split_enclosed_in_side(&bbox, &direction) {
+                        (SplitDirection::Left, left_bbox_calculated) => {
+                            tree = left;
+                            bbox = left_bbox_calculated;
+                            direction = direction.next_axis();
+                            continue;
+                        }
+                        (SplitDirection::Right, right_bbox_calculated) => {
+                            tree = right;
+                            bbox = right_bbox_calculated;
+                            direction = direction.next_axis();
+                            continue;
+                        }
+                        (SplitDirection::Split, _) => {}
                     }
                 }
                 None => {}

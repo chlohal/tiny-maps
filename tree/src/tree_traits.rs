@@ -2,14 +2,18 @@ use minimal_storage::serialize_min::{DeserializeFromMinimal, SerializeMinimal};
 use std::fmt::Debug;
 
 pub trait MultidimensionalQuery<const DIMENSION_COUNT: usize, Key>
-where Key: MultidimensionalKey<DIMENSION_COUNT> {
+where
+    Key: MultidimensionalKey<DIMENSION_COUNT>,
+{
     fn bounding_box(&self) -> Key::Parent;
     fn overlaps_box(&self, bbox: &Key::Parent) -> bool;
 
     fn contains_item(&self, item: &Key) -> bool;
 }
 
-impl<const DIMENSION_COUNT: usize, K: MultidimensionalKey<DIMENSION_COUNT>> MultidimensionalQuery<DIMENSION_COUNT, K> for K::Parent {
+impl<const DIMENSION_COUNT: usize, K: MultidimensionalKey<DIMENSION_COUNT>>
+    MultidimensionalQuery<DIMENSION_COUNT, K> for K::Parent
+{
     fn bounding_box(&self) -> K::Parent {
         self.to_owned()
     }
@@ -21,6 +25,13 @@ impl<const DIMENSION_COUNT: usize, K: MultidimensionalKey<DIMENSION_COUNT>> Mult
     fn contains_item(&self, item: &K) -> bool {
         item.is_contained_in(self)
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SplitDirection {
+    Left,
+    Right,
+    Split,
 }
 
 pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
@@ -38,6 +49,27 @@ pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
     fn contains(&self, child: &Self) -> bool;
     fn overlaps(&self, child: &Self) -> bool;
     fn split_evenly_on_dimension(&self, dimension: &Self::DimensionEnum) -> (Self, Self);
+
+    fn split_enclosed_in_side(
+        &self,
+        dimension: &Self::DimensionEnum,
+        child: &Self,
+    ) -> (SplitDirection, Self) {
+        let (left_bbox_calculated, right_bbox_calculated) =
+            self.split_evenly_on_dimension(dimension);
+
+        if left_bbox_calculated.contains(&child) {
+            return (SplitDirection::Left, left_bbox_calculated);
+        } else if right_bbox_calculated.contains(&child) {
+            return (SplitDirection::Right, left_bbox_calculated);
+        } else {
+            return (SplitDirection::Split, self.to_owned());
+        }
+    }
+
+    fn split_enclosed_in(&self, dimension: &Self::DimensionEnum, child: &Self) -> SplitDirection {
+        self.split_enclosed_in_side(dimension, child).0
+    }
 }
 
 pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
@@ -58,13 +90,21 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
 
     /// Can be overriden if wished for speed, but must be equivalent
     /// to `Self::apply_delta_from_parent(delta, parent).is_contained_in(parent)`.
-    fn delta_from_parent_would_be_contained(delta: &Self::DeltaFromParent, from: &Self::Parent, container: &Self::Parent) -> bool {
+    fn delta_from_parent_would_be_contained(
+        delta: &Self::DeltaFromParent,
+        from: &Self::Parent,
+        container: &Self::Parent,
+    ) -> bool {
         Self::apply_delta_from_parent(delta, from).is_contained_in(container)
     }
 
     /// Can be overriden if wished for speed, but must be equivalent
     /// to `Self::apply_delta_from_parent(delta, parent).is_contained_in(parent)`.
-    fn delta_from_parent_would_overlap(delta: &Self::DeltaFromParent, from: &Self::Parent, container: &Self::Parent) -> bool {
+    fn delta_from_parent_would_overlap(
+        delta: &Self::DeltaFromParent,
+        from: &Self::Parent,
+        container: &Self::Parent,
+    ) -> bool {
         Self::apply_delta_from_parent(delta, from).is_contained_in(container)
     }
 
@@ -79,6 +119,23 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
         delta: &Self::DeltaFromSelfAsChild,
         initial: &Self::DeltaFromParent,
     ) -> Self::DeltaFromParent;
+
+    fn parent_split_enclosed_in_side(
+        &self,
+        parent: &Self::Parent,
+        dimension: &<Self::Parent as MultidimensionalParent<DIMENSION_COUNT>>::DimensionEnum,
+    ) -> (SplitDirection, Self::Parent) {
+        let (left_bbox_calculated, right_bbox_calculated) =
+            parent.split_evenly_on_dimension(dimension);
+
+        if self.is_contained_in(&left_bbox_calculated) {
+            return (SplitDirection::Left, left_bbox_calculated);
+        } else if self.is_contained_in(&right_bbox_calculated) {
+            return (SplitDirection::Right, left_bbox_calculated);
+        } else {
+            return (SplitDirection::Split, parent.to_owned());
+        }
+    }
 }
 
 pub trait MultidimensionalValue<Key>:
@@ -113,7 +170,7 @@ impl Dimension<1> for () {
     fn from_index(_index: usize) -> Self {
         ()
     }
-    
+
     fn arbitrary_first() -> Self {
         ()
     }

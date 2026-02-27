@@ -11,7 +11,7 @@ use minimal_storage::{
     varint::{from_varint, FromVarint, ToVarint},
 };
 
-use crate::tree_traits::{AbsDiff, MinValue};
+use crate::tree_traits::{AbsDiff, MinValue, SplitDirection};
 
 use super::tree_traits::{Average, Dimension, MultidimensionalKey, MultidimensionalParent, Zero};
 
@@ -455,6 +455,47 @@ impl MultidimensionalParent<2> for BoundingBox<i32> {
     fn overlaps(&self, child: &Self) -> bool {
         self.overlaps(child)
     }
+
+    fn split_enclosed_in_side(
+            &self,
+            dimension: &Self::DimensionEnum,
+            child: &Self,
+        ) -> (crate::tree_traits::SplitDirection, Self) {
+        match dimension {
+            LongLatSplitDirection::Long => {
+                let y_split = Average::avg(&self.y, &self.y_end);
+                if child.y_end <= y_split {
+                    return (SplitDirection::Left, BoundingBox {
+                        y_end: y_split,
+                        ..*self
+                    });
+                } else if child.y >= y_split {
+                    return (SplitDirection::Right, BoundingBox {
+                        y: y_split,
+                        ..*self
+                    });
+                } else {
+                    return (SplitDirection::Split, *self)
+                }
+            },
+            LongLatSplitDirection::Lat => {
+                let x_split = Average::avg(&self.x, &self.x_end);
+                if child.x_end <= x_split {
+                    return (SplitDirection::Left, BoundingBox {
+                        x_end: x_split,
+                        ..*self
+                    });
+                } else if child.x >= x_split {
+                    return (SplitDirection::Right, BoundingBox {
+                        x: x_split,
+                        ..*self
+                    });
+                } else {
+                    return (SplitDirection::Split, *self)
+                }
+            },
+        }
+    }
 }
 
 impl MultidimensionalKey<2> for BoundingBox<i32> {
@@ -505,6 +546,14 @@ impl MultidimensionalKey<2> for BoundingBox<i32> {
             x_end: 0,
             y_end: 0,
         }
+    }
+
+    fn parent_split_enclosed_in_side(
+            &self,
+            parent: &Self::Parent,
+            dimension: &<Self::Parent as MultidimensionalParent<2>>::DimensionEnum,
+        ) -> (SplitDirection, Self::Parent) {
+        parent.split_enclosed_in_side(dimension, self)
     }
 }
 

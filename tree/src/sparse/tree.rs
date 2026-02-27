@@ -13,7 +13,9 @@ use debug_logs::debug_print;
 
 use crate::{
     sparse::structure::{Inner, Node, Root, StoredTree, TreePagedStorage},
-    tree_traits::{MultidimensionalKey, MultidimensionalQuery, MultidimensionalValue},
+    tree_traits::{
+        MultidimensionalKey, MultidimensionalQuery, MultidimensionalValue, SplitDirection,
+    },
     PAGE_SIZE,
 };
 
@@ -90,7 +92,6 @@ where
         })
         .filter(|(_, bbox)| query.overlaps_box(bbox))
         .filter_map(move |(node, _bbox)| {
-
             let page_read =
                 Storage::Page::read_arc(&self.storage.get(node.page_id.get()?, ()).unwrap());
 
@@ -382,26 +383,27 @@ where
         loop {
             match &tree.left_right_split.get() {
                 Some((left, right)) => {
-                    let (left_bbox_calculated, right_bbox_calculated) =
-                        bbox.split_evenly_on_dimension(&direction);
+                    let (split_leftright, child_bbox) =
+                        bbox.split_enclosed_in_side(&direction, &area);
 
                     // if we've reached the rounding limit of the bounding-box type, then don't
-                    // continue recursing; that would unduly limit the search area.
-                    let rounding_limit_reached =
-                        left_bbox_calculated == bbox || right_bbox_calculated == bbox;
+                    // continue recursing; that would unduly limit the search area
 
-                    debug_assert_eq!(left_bbox_calculated, left.bbox);
-                    debug_assert_eq!(right_bbox_calculated, right.bbox);
+                    //NOTE: technically this can be true when the rounding limit HAS NOT BEEN REACHED YET
+                    //      if the area spans the two sides, but since this will result in the same
+                    //      behaviour (i.e. the return statement being reached), no need to complicate
+                    //      the code with additional checks. That being said, note this possibility; it WILL happen!
+                    let rounding_limit_reached = child_bbox == bbox;
 
                     if !rounding_limit_reached {
-                        if left_bbox_calculated.contains(&area) {
+                        if split_leftright == SplitDirection::Left {
                             tree = left;
-                            bbox = left_bbox_calculated;
+                            bbox = child_bbox;
                             direction = direction.next_axis();
                             continue;
-                        } else if right_bbox_calculated.contains(&area) {
+                        } else if split_leftright == SplitDirection::Right {
                             tree = right;
-                            bbox = right_bbox_calculated;
+                            bbox = child_bbox;
                             direction = direction.next_axis();
                             continue;
                         }
@@ -439,17 +441,16 @@ where
         loop {
             match &tree.left_right_split.get() {
                 Some((left, right)) => {
-                    let (left_bbox_calculated, right_bbox_calculated) =
-                        bbox.split_evenly_on_dimension(&direction);
+                    let (split_leftright, child_bbox) = k.parent_split_enclosed_in_side(&bbox, &direction);
 
-                    if k.is_contained_in(&left_bbox_calculated) {
+                    if split_leftright == SplitDirection::Left {
                         tree = left;
-                        bbox = left_bbox_calculated;
+                        bbox = child_bbox;
                         direction = direction.next_axis();
                         continue;
-                    } else if k.is_contained_in(&right_bbox_calculated) {
+                    } else if split_leftright == SplitDirection::Right {
                         tree = right;
-                        bbox = right_bbox_calculated;
+                        bbox = child_bbox;
                         direction = direction.next_axis();
                         continue;
                     }

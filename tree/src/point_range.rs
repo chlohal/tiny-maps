@@ -11,7 +11,14 @@ use minimal_storage::{
     varint::{FromVarint, ToVarint},
 };
 
-use crate::{sparse::{structure::{Inner, Root}, SparseKey, SparseValue}, tree_traits::{MaxValue, MinValue}, PAGE_SIZE};
+use crate::{
+    sparse::{
+        structure::{Inner, Root},
+        SparseKey, SparseValue,
+    },
+    tree_traits::{MaxValue, MinValue, SplitDirection},
+    PAGE_SIZE,
+};
 
 use super::tree_traits::{Average, MultidimensionalKey, MultidimensionalParent, Zero};
 
@@ -115,7 +122,7 @@ pub trait OneDimensionalCoord:
     + Add<Output = Self>
     + Sub<Output = Self>
     + std::fmt::Debug
-    + MinValue 
+    + MinValue
     + MaxValue
 {
 }
@@ -159,6 +166,19 @@ impl<T: OneDimensionalCoord> MultidimensionalParent<1> for RangeInclusive<T> {
 
         ((*self.start())..=middle, middle..=(*self.end()))
     }
+
+    fn split_enclosed_in_side(&self, _: &(), child: &Self) -> (SplitDirection, Self) {
+        let middle = Average::avg(self.start(), self.end());
+
+        if *child.start() >= middle {
+            return (SplitDirection::Left, (*self.start())..=middle);
+        }
+        if *child.end() <= middle {
+            return (SplitDirection::Right, middle..=(*self.end()))
+        }
+
+        return (SplitDirection::Split, self.to_owned())
+    }
 }
 
 impl<T: OneDimensionalCoord> MultidimensionalKey<1> for T {
@@ -200,5 +220,21 @@ impl<T: OneDimensionalCoord> MultidimensionalKey<1> for T {
 
     fn largest_key_in(parent: &Self::Parent) -> Self {
         *parent.start()
+    }
+
+    fn parent_split_enclosed_in_side(
+            &self,
+            parent: &Self::Parent,
+            _: &(),
+        ) -> (SplitDirection, Self::Parent) {
+        let middle = Average::avg(parent.start(), parent.end());
+
+        if *self >= middle {
+            return (SplitDirection::Left, (*parent.start())..=middle);
+        }
+        if *self <= middle {
+            return (SplitDirection::Right, middle..=(*parent.end()))
+        }
+        return (SplitDirection::Split, parent.to_owned());
     }
 }
