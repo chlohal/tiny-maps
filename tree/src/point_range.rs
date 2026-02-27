@@ -229,10 +229,10 @@ impl<T: OneDimensionalCoord> MultidimensionalKey<1> for T {
         ) -> (SplitDirection, Self::Parent) {
         let middle = Average::avg(parent.start(), parent.end());
 
-        if *self >= middle {
+        if *self <= middle {
             return (SplitDirection::Left, (*parent.start())..=middle);
         }
-        if *self <= middle {
+        if *self >= middle {
             return (SplitDirection::Right, middle..=(*parent.end()))
         }
         return (SplitDirection::Split, parent.to_owned());
