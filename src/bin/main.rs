@@ -70,6 +70,7 @@ fn main() {
         writeln!(&mut incomplete_file, "{:?}", item.id()).unwrap();
     }
 
+    println!("Garbage collecting and compressing...");
     compressor.flush_to_storage().unwrap();
 }
 
