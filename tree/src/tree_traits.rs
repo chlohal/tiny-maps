@@ -61,7 +61,7 @@ pub trait MultidimensionalParent<const DIMENSION_COUNT: usize>:
         if left_bbox_calculated.contains(&child) {
             return (SplitDirection::Left, left_bbox_calculated);
         } else if right_bbox_calculated.contains(&child) {
-            return (SplitDirection::Right, left_bbox_calculated);
+            return (SplitDirection::Right, right_bbox_calculated);
         } else {
             return (SplitDirection::Split, self.to_owned());
         }
@@ -131,7 +131,7 @@ pub trait MultidimensionalKey<const DIMENSION_COUNT: usize>:
         if self.is_contained_in(&left_bbox_calculated) {
             return (SplitDirection::Left, left_bbox_calculated);
         } else if self.is_contained_in(&right_bbox_calculated) {
-            return (SplitDirection::Right, left_bbox_calculated);
+            return (SplitDirection::Right, right_bbox_calculated);
         } else {
             return (SplitDirection::Split, parent.to_owned());
         }
